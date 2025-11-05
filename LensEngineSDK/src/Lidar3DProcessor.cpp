@@ -83,9 +83,12 @@ void Lidar3DProcessor::processLidarDataAsync(const std::vector<uint8_t> &depthDa
 {
     m_cancelProcessing = false;
     
-    std::async(std::launch::async, [this, depthData, confidenceData]() {
+    // Сохраняем future, чтобы избежать предупреждения
+    auto future = std::async(std::launch::async, [this, depthData, confidenceData]() {
         processLidarInternal(depthData, confidenceData);
     });
+    // Сохраняем future в член класса или игнорируем (если не нужен результат)
+    (void)future; // Подавляем предупреждение о неиспользуемой переменной
 }
 
 Lidar3DProcessor::SpatialAnalysisResult Lidar3DProcessor::getLastAnalysis() const

@@ -62,7 +62,6 @@ if(NOT glm_FOUND)
         C:/glm/include
     )
     if(GLM_INCLUDE_DIR)
-        include_directories(${GLM_INCLUDE_DIR})
         message(STATUS "Found GLM at: ${GLM_INCLUDE_DIR}")
     else()
         message(WARNING "GLM not found! Please install GLM")
@@ -155,6 +154,61 @@ endif()
 if(LENSENGINE_LIB)
     target_link_libraries(ARLauncher PRIVATE ${LENSENGINE_LIB})
     target_include_directories(ARLauncher PRIVATE ${LENSENGINE_SDK_DIR}/include)
+endif()
+
+# GLM include директории
+if(GLM_INCLUDE_DIR)
+    target_include_directories(ARLauncher PRIVATE ${GLM_INCLUDE_DIR})
+elseif(glm_FOUND)
+    # GLM найден через find_package
+    # GLM обычно header-only, поэтому просто добавляем include директории
+    if(TARGET glm::glm)
+        target_link_libraries(ARLauncher PRIVATE glm::glm)
+    endif()
+    # В любом случае добавляем стандартные пути для GLM
+    target_include_directories(ARLauncher PRIVATE
+        /usr/include
+        /usr/local/include
+    )
+else()
+    # Если GLM не найден, пробуем стандартные пути
+    target_include_directories(ARLauncher PRIVATE
+        /usr/include
+        /usr/local/include
+    )
+endif()
+
+# SensorConnector (опционально, если нужна прямая интеграция)
+# Примечание: SensorConnector собирается через qmake и создает libSensorConnector.a
+# Для использования SensorConnector в ARLauncher нужно:
+# 1. Собрать SensorConnector через qmake
+# 2. Подключить Qt библиотеки
+# 3. Подключить libSensorConnector.a
+# 4. Добавить include директорию SensorConnector/include
+
+# Опция для подключения SensorConnector
+# ВНИМАНИЕ: SensorConnector должен быть собран с той же версией Qt, что и ARLauncher
+# Сейчас SensorConnector собран с Qt5, а ARLauncher использует Qt6
+# Для подключения нужно пересобрать SensorConnector с Qt6
+option(USE_SENSOR_CONNECTOR "Use SensorConnector library" OFF)
+if(USE_SENSOR_CONNECTOR)
+    # Указываем путь к Qt6
+    set(Qt6_DIR "/home/savva/Qt/6.5.3/gcc_64/lib/cmake/Qt6" CACHE PATH "Qt6 directory")
+    find_package(Qt6 COMPONENTS Core Network REQUIRED)
+    set(SENSOR_CONNECTOR_DIR "${CMAKE_SOURCE_DIR}/../SensorConnector")
+    
+    if(EXISTS "${SENSOR_CONNECTOR_DIR}/lib/libSensorConnector.a")
+        target_link_libraries(ARLauncher PRIVATE 
+            ${SENSOR_CONNECTOR_DIR}/lib/libSensorConnector.a
+            Qt6::Core
+            Qt6::Network
+        )
+        target_include_directories(ARLauncher PRIVATE ${SENSOR_CONNECTOR_DIR}/include)
+        target_compile_definitions(ARLauncher PRIVATE USE_SENSOR_CONNECTOR)
+        message(STATUS "SensorConnector library linked")
+    else()
+        message(WARNING "SensorConnector library not found. Build it first with qmake")
+    endif()
 endif()
 
 # Выходные директории

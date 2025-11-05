@@ -14,9 +14,9 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Include директории
-include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(${CMAKE_SOURCE_DIR}/src)
+# Include директории (для компиляции исходников)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Зависимости
 # GLM - математическая библиотека
@@ -92,6 +92,13 @@ add_library(LensEngineSDK STATIC
     ${LENSENGINE_HEADERS}
 )
 
+# Include директории для библиотеки
+target_include_directories(LensEngineSDK PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<INSTALL_INTERFACE:include>
+)
+
 # Связывание библиотек
 target_link_libraries(LensEngineSDK
     PRIVATE
@@ -102,7 +109,7 @@ if(LENSENGINE_USE_OPENCV AND OpenCV_FOUND)
         PRIVATE
         ${OpenCV_LIBS}
     )
-    target_compile_definitions(LENSENGINE_USE_OPENCV PRIVATE LENSENGINE_USE_OPENCV)
+    target_compile_definitions(LensEngineSDK PRIVATE LENSENGINE_USE_OPENCV)
 endif()
 
 # Установка

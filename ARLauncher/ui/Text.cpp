@@ -1,8 +1,10 @@
 #include "Text.h"
+#include "Style.h"
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #include <GL/gl.h>
 #endif
+#include <memory>
 
 Text::Text(const std::string& text)
     : m_text(text)
@@ -41,11 +43,18 @@ void Text::render()
     glPushMatrix();
     glLoadIdentity();
     
+    // AR стиль текста
+    auto style = m_style ? m_style : std::make_shared<Style>(Style::createARTextStyle());
+    glm::vec4 textColor = style->textColor;
+    glColor4f(textColor.r, textColor.g, textColor.b, textColor.a * style->opacity);
+    
     // Простой индикатор текста (квадрат)
-    glColor3f(1.0f, 1.0f, 1.0f);
-    glPointSize(2.0f);
+    // TODO: Реализовать полноценный рендеринг текста через FreeType
+    glPointSize(style->fontSize * 0.5f);
     glBegin(GL_POINTS);
-    glVertex2f(m_position.x, m_position.y);
+    for (size_t i = 0; i < m_text.length() && i < 20; i++) {
+        glVertex2f(m_position.x + i * style->fontSize * 0.6f, m_position.y);
+    }
     glEnd();
     
     glPopMatrix();

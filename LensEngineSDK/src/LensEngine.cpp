@@ -137,7 +137,7 @@ void LensEngineCore::setupCallbacks()
         
         // Обновляем контроллер камеры
         if (m_cameraController) {
-            m_cameraController->updateFromPose(pose);
+            m_cameraController->updateFromCameraPose(pose);
         }
         
         // Вызываем внешний колбэк

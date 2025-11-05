@@ -1,10 +1,17 @@
 #include "Application.h"
 #include "Renderer.h"
 #include "Scene.h"
+#include "Camera.h"
 #include "UIRenderer.h"
-#include "ui/Button.h"
-#include "ui/Text.h"
+#include "Button.h"
+#include "Text.h"
+#include "Style.h"
 #include "LensEngineAPI.h"
+#ifdef USE_SENSOR_CONNECTOR
+#include "SensorConnector.h"
+#include <QCoreApplication>
+#include <QTimer>
+#endif
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #define GLFW_INCLUDE_NONE
@@ -64,6 +71,12 @@ bool Application::initialize(int argc, char* argv[])
         return false;
     }
     
+#ifdef USE_SENSOR_CONNECTOR
+    if (!initializeSensorConnector()) {
+        std::cerr << "Warning: SensorConnector initialization failed, continuing without it" << std::endl;
+    }
+#endif
+    
     m_initialized = true;
     m_running = true;
     
@@ -82,6 +95,13 @@ void Application::run()
         
         glfwPollEvents();
         
+#ifdef USE_SENSOR_CONNECTOR
+        // Обрабатываем Qt события (для SensorConnector)
+        if (QCoreApplication::instance()) {
+            QCoreApplication::processEvents();
+        }
+#endif
+        
         update(m_deltaTime);
         render();
         
@@ -94,6 +114,13 @@ void Application::shutdown()
     if (!m_initialized) {
         return;
     }
+    
+#ifdef USE_SENSOR_CONNECTOR
+    if (m_sensorConnector) {
+        m_sensorConnector->stopServers();
+        m_sensorConnector.reset();
+    }
+#endif
     
     m_uiRenderer.reset();
     m_scene.reset();
@@ -111,18 +138,34 @@ void Application::shutdown()
 
 bool Application::initializeWindow()
 {
+#ifdef USE_VULKAN
+    // Для Vulkan не нужны OpenGL hints
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#else
+    // Для OpenGL настраиваем контекст
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_COMPAT_PROFILE); // Используем Compatibility Profile для legacy OpenGL
+#endif
     
     m_window = glfwCreateWindow(m_windowWidth, m_windowHeight, "ARLauncher", nullptr, nullptr);
     
     if (!m_window) {
-        std::cerr << "Failed to create GLFW window" << std::endl;
+        const char* description;
+        int code = glfwGetError(&description);
+        std::cerr << "Failed to create GLFW window (code: " << code << "): " << (description ? description : "unknown error") << std::endl;
         return false;
     }
     
+#ifndef USE_VULKAN
+    // Только для OpenGL нужен контекст
     glfwMakeContextCurrent(m_window);
+    if (!glfwGetCurrentContext()) {
+        std::cerr << "Failed to make OpenGL context current" << std::endl;
+        return false;
+    }
+#endif
+    
     glfwSetWindowUserPointer(m_window, this);
     
     // Callbacks
@@ -137,10 +180,19 @@ bool Application::initializeWindow()
 
 bool Application::initializeRenderer()
 {
-    m_renderer = createRenderer(false); // Используем OpenGL по умолчанию
+#ifdef USE_VULKAN
+    m_renderer = createRenderer(true); // Используем Vulkan если доступен
+#else
+    m_renderer = createRenderer(false); // Используем OpenGL
+#endif
     
-    if (!m_renderer || !m_renderer->initialize(m_window)) {
-        std::cerr << "Failed to initialize renderer" << std::endl;
+    if (!m_renderer) {
+        std::cerr << "Failed to create renderer" << std::endl;
+        return false;
+    }
+    
+    if (!m_renderer->initialize(m_window)) {
+        std::cerr << "Failed to initialize renderer (OpenGL context issue?)" << std::endl;
         return false;
     }
     
@@ -156,7 +208,7 @@ bool Application::initializeScene()
         return false;
     }
     
-    m_scene->createDemoScene();
+    m_scene->createDemoScene(m_renderer.get());
     
     return true;
 }
@@ -170,18 +222,49 @@ bool Application::initializeUI()
         return false;
     }
     
-    // Создаем демо UI элементы
-    auto startButton = std::make_shared<Button>("Start AR");
-    startButton->setPosition(glm::vec2(10.0f, 10.0f));
-    startButton->setSize(glm::vec2(150.0f, 40.0f));
+    // Создаем AR UI элементы с красивым стилем
+    auto startButton = std::make_shared<Button>("🚀 Start AR");
+    startButton->setPosition(glm::vec2(20.0f, 20.0f));
+    startButton->setSize(glm::vec2(180.0f, 50.0f));
+    startButton->setStyle(std::make_shared<Style>(Style::createARButtonStyle()));
     startButton->setOnClick([]() {
         std::cout << "AR Started" << std::endl;
     });
     m_uiRenderer->addElement(startButton);
     
-    auto infoText = std::make_shared<Text>("Camera Position: (0, 0, 0)");
-    infoText->setPosition(glm::vec2(10.0f, 60.0f));
-    m_uiRenderer->addElement(infoText);
+    // Виджет для отображения данных камеры
+    auto cameraInfoText = std::make_shared<Text>("📷 Camera: Waiting...");
+    cameraInfoText->setPosition(glm::vec2(20.0f, 80.0f));
+    cameraInfoText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
+    m_uiRenderer->addElement(cameraInfoText);
+    
+    // Виджет для отображения позы
+    auto poseText = std::make_shared<Text>("📍 Position: (0, 0, 0)");
+    poseText->setPosition(glm::vec2(20.0f, 110.0f));
+    poseText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
+    m_uiRenderer->addElement(poseText);
+    
+    // Виджет для IMU данных
+    auto imuText = std::make_shared<Text>("⚡ IMU: No data");
+    imuText->setPosition(glm::vec2(20.0f, 140.0f));
+    imuText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
+    m_uiRenderer->addElement(imuText);
+    
+    // Виджет для статуса подключения iPhone
+    auto connectionText = std::make_shared<Text>("📡 iPhone: Disconnected");
+    connectionText->setPosition(glm::vec2(20.0f, 170.0f));
+    connectionText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
+    m_uiRenderer->addElement(connectionText);
+    
+    // Кнопка подключения
+    auto connectButton = std::make_shared<Button>("🔌 Connect iPhone");
+    connectButton->setPosition(glm::vec2(20.0f, 200.0f));
+    connectButton->setSize(glm::vec2(180.0f, 50.0f));
+    connectButton->setStyle(std::make_shared<Style>(Style::createARButtonStyle()));
+    connectButton->setOnClick([]() {
+        std::cout << "Connecting to iPhone..." << std::endl;
+    });
+    m_uiRenderer->addElement(connectButton);
     
     return true;
 }
@@ -205,6 +288,70 @@ bool Application::initializeLensEngine()
     return true;
 }
 
+#ifdef USE_SENSOR_CONNECTOR
+bool Application::initializeSensorConnector()
+{
+    // Создаем QCoreApplication если его нет (для Qt event loop)
+    static int argc = 1;
+    static char* argv[] = {(char*)"ARLauncher"};
+    if (!QCoreApplication::instance()) {
+        new QCoreApplication(argc, argv);
+    }
+    
+    m_sensorConnector = std::make_unique<SensorConnector::SensorConnectorCore>();
+    
+    if (!m_sensorConnector->initialize()) {
+        std::cerr << "Failed to initialize SensorConnector" << std::endl;
+        return false;
+    }
+    
+    // Подключаем сигналы для получения декодированных RGB кадров с камеры iPhone
+    QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::frameDecoded,
+                     [this](const QImage& frame, quint64 sequenceNumber) {
+                         if (m_renderer && !frame.isNull()) {
+                             // Преобразуем QImage в RGB данные для рендеринга
+                             QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
+                             
+                             if (!rgbFrame.isNull()) {
+                                 uint32_t width = static_cast<uint32_t>(rgbFrame.width());
+                                 uint32_t height = static_cast<uint32_t>(rgbFrame.height());
+                                 const uint8_t* rgbData = rgbFrame.constBits();
+                                 
+                                 // Рендерим видео фон для AR
+                                 m_renderer->renderVideoBackground(rgbData, width, height);
+                                 
+                                 static int frameCount = 0;
+                                 if (frameCount++ % 60 == 0) {
+                                     std::cout << "📹 RGB Frame received: " << width << "x" << height 
+                                               << " (Seq: " << sequenceNumber << ")" << std::endl;
+                                 }
+                             }
+                         }
+                     });
+    
+    // Подключаем сигналы для получения других данных (IMU, LiDAR и т.д.)
+    QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::dataReceived,
+                     [this](const SensorConnector::SensorData& data) {
+                         // Передаем данные в LensEngine
+                         if (m_lensEngine) {
+                             // TODO: Преобразовать SensorData в формат LensEngine
+                             // m_lensEngine->processSensorData(data);
+                         }
+                     });
+    
+    // Запускаем серверы на порту 9000 (TCP и UDP)
+    m_sensorConnector->startServers(9000, 9000);
+    
+    std::cout << "✅ SensorConnector initialized" << std::endl;
+    std::cout << "   TCP Server: port 9000" << std::endl;
+    std::cout << "   UDP Server: port 9000" << std::endl;
+    std::cout << "   USB Server: port 9001" << std::endl;
+    std::cout << "   Waiting for iPhone connection..." << std::endl;
+    
+    return true;
+}
+#endif
+
 void Application::update(float deltaTime)
 {
     if (m_scene) {
@@ -220,7 +367,12 @@ void Application::render()
     
     m_renderer->beginFrame();
     
-    // Рендеринг сцены
+    // ВАЖНО: Порядок рендеринга для AR:
+    // 1. Сначала рендерим видео фон с камеры iPhone (renderVideoBackground вызывается асинхронно через сигнал)
+    // 2. Затем рендерим 3D объекты поверх видео (AR наложение)
+    // 3. Наконец рендерим UI поверх всего
+    
+    // Рендеринг 3D объектов поверх видео фона (AR наложение)
     if (m_scene) {
         auto camera = m_scene->getCamera();
         if (camera) {
@@ -232,7 +384,7 @@ void Application::render()
         m_renderer->render3DObjects(transforms, meshIds);
     }
     
-    // Рендеринг UI
+    // Рендеринг UI поверх всего
     if (m_uiRenderer) {
         m_uiRenderer->beginFrame();
         m_uiRenderer->render();

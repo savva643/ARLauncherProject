@@ -1,7 +1,8 @@
-#include "SensorConnector.h"
 #include "NetworkServerSimplified.h"
+#include "SensorConnector.h"
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QDateTime>
 
 namespace SensorConnector {
 
@@ -33,6 +34,10 @@ bool SensorConnectorCore::initialize()
                 sensorData.timestamp = QDateTime::currentMSecsSinceEpoch();
                 emit dataReceived(sensorData);
             });
+    
+    // Подключаем сигнал декодированных RGB кадров для AR рендеринга
+    connect(m_networkServer, &NetworkServerSimplified::frameDecoded,
+            this, &SensorConnectorCore::frameDecoded);
     
     connect(m_networkServer, &NetworkServerSimplified::statusChanged,
             this, &SensorConnectorCore::connectionStatusChanged);
@@ -67,10 +72,14 @@ void SensorConnectorCore::stopServers()
 
 ConnectionStats SensorConnectorCore::getStatistics() const
 {
+    // Создаем локальную копию для изменения (метод const)
+    ConnectionStats stats = m_stats;
+    
     // Обновляем статистику из NetworkServer
-    m_stats.clientsCount = m_networkServer ? m_networkServer->clientsCount() : 0;
-    m_stats.status = m_networkServer ? m_networkServer->serverStatus() : "Stopped";
-    return m_stats;
+    stats.clientsCount = m_networkServer ? m_networkServer->clientsCount() : 0;
+    stats.status = m_networkServer ? m_networkServer->serverStatus() : QString("Stopped");
+    
+    return stats;
 }
 
 bool SensorConnectorCore::isUsbConnected() const

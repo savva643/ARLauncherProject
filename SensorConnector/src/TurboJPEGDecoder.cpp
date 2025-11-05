@@ -1,6 +1,5 @@
 #include "TurboJPEGDecoder.h"
 #include <QDebug>
-#include <QApplication>
 #include <turbojpeg.h>
 
 // 🔹 ОБНОВЛЕННЫЙ КЛАСС ЗАДАЧИ С ПОДДЕРЖКОЙ sequenceNumber

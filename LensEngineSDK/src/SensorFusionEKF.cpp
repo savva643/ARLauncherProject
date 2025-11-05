@@ -252,8 +252,10 @@ void SensorFusionEKF::updateVisualStep(const glm::vec3 &visualPosition, const gl
     glm::quat currentRot = stateToQuaternion();
     
     // Смешиваем позицию
-    glm::vec3 newPos = currentPos * (1.0 - alpha) + visualPosition * alpha;
-    positionToState(newPos);
+    glm::vec3 newPos = currentPos * static_cast<float>(1.0 - alpha) + visualPosition * static_cast<float>(alpha);
+    m_state[0] = static_cast<double>(newPos.x);
+    m_state[1] = static_cast<double>(newPos.y);
+    m_state[2] = static_cast<double>(newPos.z);
     
     // Смешиваем ориентацию
     glm::quat newRot = glm::slerp(currentRot, visualRotation, static_cast<float>(alpha));

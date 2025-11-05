@@ -1,0 +1,2 @@
+/usr/bin/ar qc lib/libLensEngineSDK.a CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o
+/usr/bin/ranlib lib/libLensEngineSDK.a

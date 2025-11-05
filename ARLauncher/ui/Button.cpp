@@ -1,9 +1,11 @@
 #include "Button.h"
+#include "Style.h"
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #include <GL/gl.h>
 #endif
 #include <iostream>
+#include <memory>
 
 Button::Button(const std::string& text)
     : m_text(text)
@@ -37,14 +39,17 @@ void Button::render()
     glPushMatrix();
     glLoadIdentity();
     
-    // Цвет кнопки
+    // AR стиль кнопки (полупрозрачный, стеклянный эффект)
+    auto style = m_style ? m_style : std::make_shared<Style>(Style::createARButtonStyle());
+    
+    glm::vec4 bgColor = style->backgroundColor;
     if (m_pressed) {
-        glColor3f(0.3f, 0.3f, 0.3f);
+        bgColor = glm::vec4(bgColor.r * 0.7f, bgColor.g * 0.7f, bgColor.b * 0.7f, bgColor.a);
     } else if (m_hovered) {
-        glColor3f(0.5f, 0.5f, 0.5f);
-    } else {
-        glColor3f(0.4f, 0.4f, 0.4f);
+        bgColor = glm::vec4(bgColor.r * 1.2f, bgColor.g * 1.2f, bgColor.b * 1.2f, bgColor.a);
     }
+    
+    glColor4f(bgColor.r, bgColor.g, bgColor.b, bgColor.a * style->opacity);
     
     // Рисуем прямоугольник
     glBegin(GL_QUADS);
@@ -54,9 +59,10 @@ void Button::render()
     glVertex2f(m_position.x, m_position.y + m_size.y);
     glEnd();
     
-    // Рамка
-    glColor3f(0.8f, 0.8f, 0.8f);
-    glLineWidth(2.0f);
+    // Рамка с AR стилем
+    glm::vec4 borderColor = style->borderColor;
+    glColor4f(borderColor.r, borderColor.g, borderColor.b, borderColor.a * style->opacity);
+    glLineWidth(style->borderWidth);
     glBegin(GL_LINE_LOOP);
     glVertex2f(m_position.x, m_position.y);
     glVertex2f(m_position.x + m_size.x, m_position.y);

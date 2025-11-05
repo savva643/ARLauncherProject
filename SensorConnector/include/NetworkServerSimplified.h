@@ -16,6 +16,8 @@
 #include "TurboJPEGDecoder.h"
 #include "FFmpegDecoder.h"
 
+namespace SensorConnector {
+
 /**
  * @brief Упрощенный NetworkServer для SensorConnector
  * 
@@ -97,6 +99,8 @@ public:
     int getFramesCount() const { return m_framesCount; }
     qint64 getTotalBytes() const { return m_totalBytes; }
 };
+
+} // namespace SensorConnector
 
 #endif // NETWORKSERVERSIMPLIFIED_H
 

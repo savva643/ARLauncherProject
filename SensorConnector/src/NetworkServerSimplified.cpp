@@ -5,6 +5,8 @@
 #include <QDateTime>
 #include <QTimer>
 
+namespace SensorConnector {
+
 NetworkServerSimplified::NetworkServerSimplified(QObject *parent)
     : QObject(parent)
     , m_tcpServer(new QTcpServer(this))
@@ -301,4 +303,6 @@ void NetworkServerSimplified::processRawData(SensorConnector::DataType type, con
         }
     }
 }
+
+} // namespace SensorConnector
 

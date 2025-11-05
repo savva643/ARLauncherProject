@@ -1,4 +1,4 @@
-#include "networkconfigurator.h"
+#include "NetworkConfigurator.h"
 #include <QDebug>
 #include <QRegularExpression>
 

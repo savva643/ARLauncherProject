@@ -10,6 +10,11 @@ struct GLFWwindow;
 namespace LensEngine {
     class LensEngineAPI;
 }
+#ifdef USE_SENSOR_CONNECTOR
+namespace SensorConnector {
+    class SensorConnectorCore;
+}
+#endif
 class Button;
 class Text;
 
@@ -45,6 +50,9 @@ private:
     bool initializeScene();
     bool initializeUI();
     bool initializeLensEngine();
+#ifdef USE_SENSOR_CONNECTOR
+    bool initializeSensorConnector();
+#endif
     
     void update(float deltaTime);
     void render();
@@ -61,6 +69,9 @@ private:
     std::unique_ptr<Scene> m_scene;
     std::unique_ptr<UIRenderer> m_uiRenderer;
     std::unique_ptr<LensEngine::LensEngineAPI> m_lensEngine;
+#ifdef USE_SENSOR_CONNECTOR
+    std::unique_ptr<SensorConnector::SensorConnectorCore> m_sensorConnector;
+#endif
     
     bool m_running;
     bool m_initialized;

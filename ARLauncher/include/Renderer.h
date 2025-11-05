@@ -2,13 +2,17 @@
 #define RENDERER_H
 
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix4x4.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <memory>
 #include <vector>
 #include <cstdint>
 
 // Forward declarations
 struct GLFWwindow;
+#ifdef USE_VULKAN
+#define VK_USE_PLATFORM_XLIB_KHR
+#include <vulkan/vulkan.h>
+#endif
 
 /**
  * @brief Базовый класс рендерера (Vulkan или OpenGL)
@@ -46,6 +50,105 @@ protected:
     int m_width;
     int m_height;
 };
+
+/**
+ * @brief Vulkan рендерер (заглушка)
+ */
+#ifdef USE_VULKAN
+class VulkanRenderer : public Renderer {
+public:
+    VulkanRenderer();
+    ~VulkanRenderer() override;
+
+    bool initialize(GLFWwindow* window) override;
+    void shutdown() override;
+    
+    void beginFrame() override;
+    void endFrame() override;
+    
+    void renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height) override;
+    void render3DObjects(const std::vector<glm::mat4>& transforms, 
+                        const std::vector<uint32_t>& meshIds) override;
+    
+    void setCameraMatrix(const glm::mat4& view, const glm::mat4& projection) override;
+    
+    uint32_t createMesh(const std::vector<float>& vertices, 
+                       const std::vector<uint32_t>& indices) override;
+    void destroyMesh(uint32_t meshId) override;
+    
+    uint32_t createTexture(const uint8_t* data, uint32_t width, uint32_t height) override;
+    void destroyTexture(uint32_t textureId) override;
+
+private:
+    glm::mat4 m_viewMatrix;
+    glm::mat4 m_projectionMatrix;
+    
+    // Vulkan объекты
+    VkInstance m_instance;
+    VkPhysicalDevice m_physicalDevice;
+    VkDevice m_device;
+    VkQueue m_graphicsQueue;
+    VkQueue m_presentQueue;
+    uint32_t m_graphicsQueueFamily;
+    uint32_t m_presentQueueFamily;
+    VkSurfaceKHR m_surface;
+    VkSwapchainKHR m_swapchain;
+    std::vector<VkImage> m_swapchainImages;
+    std::vector<VkImageView> m_swapchainImageViews;
+    VkFormat m_swapchainImageFormat;
+    VkExtent2D m_swapchainExtent;
+    VkRenderPass m_renderPass;
+    std::vector<VkFramebuffer> m_swapchainFramebuffers;
+    VkCommandPool m_commandPool;
+    std::vector<VkCommandBuffer> m_commandBuffers;
+    std::vector<VkSemaphore> m_imageAvailableSemaphores;
+    std::vector<VkSemaphore> m_renderFinishedSemaphores;
+    std::vector<VkFence> m_inFlightFences;
+    uint32_t m_currentFrame;
+    uint32_t m_currentImageIndex;
+    bool m_initialized;
+    
+    // Структура для хранения мешей
+    struct VulkanMesh {
+        VkBuffer vertexBuffer;
+        VkDeviceMemory vertexBufferMemory;
+        VkBuffer indexBuffer;
+        VkDeviceMemory indexBufferMemory;
+        uint32_t indexCount;
+    };
+    std::vector<VulkanMesh> m_meshes;
+    uint32_t m_nextMeshId;
+    
+    // Видео текстура для RGB камеры
+    VkImage m_videoImage;
+    VkDeviceMemory m_videoImageMemory;
+    VkImageView m_videoImageView;
+    VkSampler m_videoSampler;
+    bool m_videoTextureInitialized;
+    
+    // Вспомогательные методы для создания буферов
+    bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
+                      VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+    void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+    bool createVideoTexture(uint32_t width, uint32_t height);
+    void updateVideoTexture(const uint8_t* data, uint32_t width, uint32_t height);
+    
+    bool createInstance();
+    bool createSurface();
+    bool pickPhysicalDevice();
+    bool createLogicalDevice();
+    bool createSwapchain();
+    bool createImageViews();
+    bool createRenderPass();
+    bool createFramebuffers();
+    bool createCommandPool();
+    bool createCommandBuffers();
+    bool createSyncObjects();
+    void cleanupSwapchain();
+    void recreateSwapchain();
+    uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+};
+#endif
 
 /**
  * @brief OpenGL рендерер

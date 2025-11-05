@@ -2,11 +2,13 @@
 #define SENSORCONNECTOR_H
 
 #include <QObject>
+#include <QString>
+#include <QImage>
 #include "SensorDataTypes.h"
 
 namespace SensorConnector {
 
-// Forward declarations
+// Forward declaration
 class NetworkServerSimplified;
 
 /**
@@ -41,6 +43,9 @@ public:
 signals:
     // Данные получены
     void dataReceived(const SensorData &data);
+    
+    // Декодированные RGB кадры с камеры (для AR рендеринга)
+    void frameDecoded(const QImage &frame, quint64 sequenceNumber);
     
     // Статистика обновлена
     void statisticsUpdated(const ConnectionStats &stats);

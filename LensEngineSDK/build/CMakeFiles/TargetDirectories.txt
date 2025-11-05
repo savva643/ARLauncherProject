@@ -1,0 +1,7 @@
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/LensEngineSDK.dir
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/edit_cache.dir
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/rebuild_cache.dir
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/list_install_components.dir
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/install.dir
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/install/local.dir
+/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles/install/strip.dir

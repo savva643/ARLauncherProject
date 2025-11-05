@@ -1,5 +1,5 @@
-#include "usbmanager.h"
-#include "networkconfigurator.h"
+#include "include/UsbManager.h"
+#include "include/NetworkConfigurator.h"
 #include <QDebug>
 #include <QNetworkInterface>
 #include <QHostAddress>

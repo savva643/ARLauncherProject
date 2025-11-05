@@ -8,6 +8,7 @@
 #include <string>
 
 class Camera;
+class Renderer;
 
 /**
  * @brief 3D объект в сцене
@@ -52,7 +53,7 @@ public:
     std::vector<uint32_t> getVisibleMeshIds() const;
     
     // Создание демо-объектов
-    void createDemoScene();
+    void createDemoScene(Renderer* renderer);
     
     // Синхронизация с реальной камерой
     void updateCameraFromAR(const glm::vec3& position, const glm::quat& rotation);

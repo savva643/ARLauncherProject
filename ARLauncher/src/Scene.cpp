@@ -1,7 +1,11 @@
 #include "Scene.h"
 #include "Camera.h"
+#include "Renderer.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
+#include <algorithm>
+#include <cmath>
+#include <iostream>
 
 Scene::Scene()
     : m_nextObjectId(1)
@@ -95,40 +99,143 @@ std::vector<uint32_t> Scene::getVisibleMeshIds() const
     return meshIds;
 }
 
-void Scene::createDemoScene()
+void Scene::createDemoScene(Renderer* renderer)
 {
-    // Создание демо-куба на "полу"
-    SceneObject cube;
-    cube.position = glm::vec3(0.0f, 0.0f, -1.0f); // На 1 метр перед камерой
-    cube.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    cube.scale = glm::vec3(0.2f); // 20 см куб
-    cube.visible = true;
-    cube.meshId = 1; // Предполагаем, что меш куба имеет ID 1
+    if (!renderer) {
+        std::cerr << "Scene::createDemoScene: renderer is null" << std::endl;
+        return;
+    }
     
-    uint32_t cubeId = addObject(cube);
+    // Создание меша куба
+    std::vector<float> cubeVertices = {
+        // Позиции (x,y,z) + Нормали (x,y,z) + UV (u,v)
+        // Передняя грань
+        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
+         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
+        // Задняя грань
+        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
+         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
+        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+        // Левая грань
+        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+        // Правая грань
+         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+        // Верхняя грань
+        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
+        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
+         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+        // Нижняя грань
+        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
+         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
+    };
     
-    // Создаем второй куб слева
+    std::vector<uint32_t> cubeIndices = {
+        0, 1, 2,  2, 3, 0,  // Передняя
+        4, 5, 6,  6, 7, 4,  // Задняя
+        8, 9, 10, 10, 11, 8, // Левая
+        12, 13, 14, 14, 15, 12, // Правая
+        16, 17, 18, 18, 19, 16, // Верхняя
+        20, 21, 22, 22, 23, 20  // Нижняя
+    };
+    
+    m_cubeMeshId = renderer->createMesh(cubeVertices, cubeIndices);
+    
+    // Создание демо-кубов
+    SceneObject cube1;
+    cube1.position = glm::vec3(0.0f, 0.0f, -1.0f); // На 1 метр перед камерой
+    cube1.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cube1.scale = glm::vec3(0.2f); // 20 см куб
+    cube1.visible = true;
+    cube1.meshId = m_cubeMeshId;
+    addObject(cube1);
+    
+    // Второй куб слева
     SceneObject cube2;
     cube2.position = glm::vec3(-0.5f, 0.0f, -1.0f);
     cube2.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     cube2.scale = glm::vec3(0.15f);
     cube2.visible = true;
-    cube2.meshId = 1;
-    
+    cube2.meshId = m_cubeMeshId;
     addObject(cube2);
     
-    // Создаем третий куб справа
+    // Третий куб справа
     SceneObject cube3;
     cube3.position = glm::vec3(0.5f, 0.0f, -1.0f);
     cube3.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
     cube3.scale = glm::vec3(0.15f);
     cube3.visible = true;
-    cube3.meshId = 1;
-    
+    cube3.meshId = m_cubeMeshId;
     addObject(cube3);
     
-    // Сохраняем ID меша куба для дальнейшего использования
-    m_cubeMeshId = 1;
+    // Создаем простую сферу (икоcaэдр для упрощения)
+    std::vector<float> sphereVertices;
+    std::vector<uint32_t> sphereIndices;
+    
+    // Простая сфера через икосаэдр (12 вершин, 20 треугольников)
+    const float t = (1.0f + std::sqrt(5.0f)) / 2.0f; // Золотое сечение
+    const float radius = 0.5f;
+    
+    // Вершины икосаэдра
+    std::vector<glm::vec3> icosahedronVertices = {
+        glm::normalize(glm::vec3(-1, t, 0)) * radius,
+        glm::normalize(glm::vec3(1, t, 0)) * radius,
+        glm::normalize(glm::vec3(-1, -t, 0)) * radius,
+        glm::normalize(glm::vec3(1, -t, 0)) * radius,
+        glm::normalize(glm::vec3(0, -1, t)) * radius,
+        glm::normalize(glm::vec3(0, 1, t)) * radius,
+        glm::normalize(glm::vec3(0, -1, -t)) * radius,
+        glm::normalize(glm::vec3(0, 1, -t)) * radius,
+        glm::normalize(glm::vec3(t, 0, -1)) * radius,
+        glm::normalize(glm::vec3(t, 0, 1)) * radius,
+        glm::normalize(glm::vec3(-t, 0, -1)) * radius,
+        glm::normalize(glm::vec3(-t, 0, 1)) * radius,
+    };
+    
+    // Индексы для икосаэдра (упрощенная версия)
+    for (size_t i = 0; i < icosahedronVertices.size(); i++) {
+        const auto& v = icosahedronVertices[i];
+        glm::vec3 normal = glm::normalize(v / radius);
+        sphereVertices.push_back(v.x);
+        sphereVertices.push_back(v.y);
+        sphereVertices.push_back(v.z);
+        sphereVertices.push_back(normal.x);
+        sphereVertices.push_back(normal.y);
+        sphereVertices.push_back(normal.z);
+        sphereVertices.push_back(0.5f); // UV
+        sphereVertices.push_back(0.5f);
+    }
+    
+    // Простые индексы (для демо используем простую сферу)
+    for (uint32_t i = 0; i < icosahedronVertices.size() - 2; i++) {
+        sphereIndices.push_back(0);
+        sphereIndices.push_back(i + 1);
+        sphereIndices.push_back(i + 2);
+    }
+    
+    m_sphereMeshId = renderer->createMesh(sphereVertices, sphereIndices);
+    
+    // Добавляем сферу в сцену
+    SceneObject sphere;
+    sphere.position = glm::vec3(0.0f, 0.3f, -1.5f); // Выше и дальше
+    sphere.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    sphere.scale = glm::vec3(0.15f);
+    sphere.visible = true;
+    sphere.meshId = m_sphereMeshId;
+    addObject(sphere);
+    
+    std::cout << "✅ Demo scene created: " << m_objects.size() << " objects" << std::endl;
 }
 
 void Scene::updateCameraFromAR(const glm::vec3& position, const glm::quat& rotation)

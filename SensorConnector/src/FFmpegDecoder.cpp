@@ -1,4 +1,4 @@
-#include "ffmpegdecoder.h"
+#include "FFmpegDecoder.h"
 #include <QDebug>
 
 extern "C" {

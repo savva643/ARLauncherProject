@@ -9,6 +9,7 @@
 #include "CameraController.h"
 #include <memory>
 #include <mutex>
+#include <functional>
 
 namespace LensEngine {
 
@@ -64,6 +65,11 @@ private:
 
     // Состояние
     bool m_initialized;
+    
+    // Колбэки
+    std::function<void(const CameraPose&)> m_poseCallback;
+    std::function<void(const std::vector<FeaturePoint>&)> m_featurePointsCallback;
+    std::function<void(const std::vector<glm::vec3>&)> m_lidarPointsCallback;
     
     // Внутренние методы
     void setupCallbacks();
