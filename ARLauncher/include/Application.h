@@ -1,0 +1,77 @@
+#ifndef APPLICATION_H
+#define APPLICATION_H
+
+#include <memory>
+#include <string>
+#include <functional>
+
+// Forward declarations
+struct GLFWwindow;
+namespace LensEngine {
+    class LensEngineAPI;
+}
+class Button;
+class Text;
+
+class Renderer;
+class Scene;
+class UIRenderer;
+
+/**
+ * @brief Главный класс приложения ARLauncher
+ */
+class Application {
+public:
+    Application();
+    ~Application();
+
+    bool initialize(int argc, char* argv[]);
+    void run();
+    void shutdown();
+
+    // Получение компонентов
+    GLFWwindow* getWindow() const { return m_window; }
+    Renderer* getRenderer() const { return m_renderer.get(); }
+    Scene* getScene() const { return m_scene.get(); }
+    UIRenderer* getUIRenderer() const { return m_uiRenderer.get(); }
+
+    // Статус
+    bool isRunning() const { return m_running; }
+    void requestExit() { m_running = false; }
+
+private:
+    bool initializeWindow();
+    bool initializeRenderer();
+    bool initializeScene();
+    bool initializeUI();
+    bool initializeLensEngine();
+    
+    void update(float deltaTime);
+    void render();
+    
+    // GLFW callbacks
+    static void onWindowClose(GLFWwindow* window);
+    static void onWindowResize(GLFWwindow* window, int width, int height);
+    static void onKeyPress(GLFWwindow* window, int key, int scancode, int action, int mods);
+    static void onMouseMove(GLFWwindow* window, double x, double y);
+    static void onMouseButton(GLFWwindow* window, int button, int action, int mods);
+
+    GLFWwindow* m_window;
+    std::unique_ptr<Renderer> m_renderer;
+    std::unique_ptr<Scene> m_scene;
+    std::unique_ptr<UIRenderer> m_uiRenderer;
+    std::unique_ptr<LensEngine::LensEngineAPI> m_lensEngine;
+    
+    bool m_running;
+    bool m_initialized;
+    
+    int m_windowWidth;
+    int m_windowHeight;
+    
+    // Статистика
+    float m_deltaTime;
+    float m_lastFrameTime;
+};
+
+#endif // APPLICATION_H
+
