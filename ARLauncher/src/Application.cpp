@@ -39,6 +39,14 @@ Application::Application()
     , m_windowHeight(1080)
     , m_deltaTime(0.0f)
     , m_lastFrameTime(0.0f)
+#ifdef USE_SENSOR_CONNECTOR
+    , m_splashActive(true)
+    , m_splashStartMs(0)
+    , m_videoOpacity(0.0f)
+    , m_3dObjectsOpacity(0.0f)
+    , m_uiOpacity(0.0f)
+    , m_titleOpacity(0.0f)
+#endif
 {
 }
 
@@ -310,6 +318,14 @@ bool Application::initializeSensorConnector()
     m_sensorConnector = std::make_unique<SensorConnector::SensorConnectorCore>();
     qRegisterMetaType<SensorConnector::SensorData>("SensorConnector::SensorData");
     
+    // Инициализируем splash screen состояние
+    m_splashActive = true;
+    m_splashStartMs = 0; // Будет установлено при первом кадре
+    m_videoOpacity = 0.0f;
+    m_3dObjectsOpacity = 0.0f;
+    m_uiOpacity = 0.0f;
+    m_titleOpacity = 0.0f;
+    
     if (!m_sensorConnector->initialize()) {
         std::cerr << "Failed to initialize SensorConnector" << std::endl;
         return false;
@@ -319,92 +335,95 @@ bool Application::initializeSensorConnector()
     QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::frameDecoded,
                      [this](const QImage& frame, quint64 sequenceNumber) {
                          if (m_renderer && !frame.isNull()) {
-                            // Преобразуем QImage в RGB и наложим splash-оверлей (fade)
+                            // Преобразуем QImage в RGB
                             QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
+                            
+                            // Инициализируем splash start time при первом кадре
+                            if (m_splashStartMs == 0) {
+                                m_splashStartMs = QDateTime::currentMSecsSinceEpoch();
+                            }
 
-                            // Splash анимация:
-                            // 0-2s: черный экран
-                            // 2-3s: fade in "Spatial Home" и "GlaskiOS" + камера/мир/UI
-                            // 3-6s: все видно
-                            // 6-9s: fade out названия, камера/мир/UI остаются
+                            // Splash анимация согласно требованиям:
+                            // 0-3s: черный экран, появляются надписи "Spatial Home" (центр) и "GlaskiOS" (внизу)
+                            // 3-6s: появляется видео фон, 3D объекты и UI (все одновременно с fade in)
+                            // 6-9s: исчезают надписи (fade out), видео/3D/UI остаются
                             if (m_splashActive) {
                                 qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
                                 if (m_splashStartMs == 0) m_splashStartMs = nowMs;
                                 qreal elapsed = qreal(nowMs - m_splashStartMs) / 1000.0; // секунды
                                 if (elapsed >= 9.0) {
                                     m_splashActive = false;
+                                    m_videoOpacity = 1.0f;
+                                    m_3dObjectsOpacity = 1.0f;
+                                    m_uiOpacity = 1.0f;
+                                    m_titleOpacity = 0.0f;
                                     elapsed = 9.0;
                                 }
 
-                                qreal cameraOpacity = 0.0;
-                                qreal titleOpacity = 0.0;
-
-                                if (elapsed < 2.0) {
-                                    // 0-2s: черный экран
-                                    cameraOpacity = 0.0;
-                                    titleOpacity = 0.0;
-                                } else if (elapsed < 3.0) {
-                                    // 2-3s: fade in
-                                    qreal fadeIn = (elapsed - 2.0) / 1.0;
-                                    cameraOpacity = fadeIn;
-                                    titleOpacity = fadeIn;
+                                // Вычисляем opacity для каждого компонента
+                                if (elapsed < 3.0) {
+                                    // 0-3s: черный экран, появляются надписи
+                                    m_videoOpacity = 0.0f;
+                                    m_3dObjectsOpacity = 0.0f;
+                                    m_uiOpacity = 0.0f;
+                                    // Надписи появляются с fade in
+                                    m_titleOpacity = static_cast<float>(elapsed / 3.0); // 0 -> 1 за 3 секунды
                                 } else if (elapsed < 6.0) {
-                                    // 3-6s: все видно
-                                    cameraOpacity = 1.0;
-                                    titleOpacity = 1.0;
+                                    // 3-6s: появляется видео, 3D объекты и UI одновременно
+                                    m_titleOpacity = 1.0f;
+                                    // Все появляются одновременно с fade in за 3 секунды
+                                    float fadeIn = static_cast<float>((elapsed - 3.0) / 3.0); // 0 -> 1 за 3 секунды
+                                    m_videoOpacity = fadeIn;
+                                    m_3dObjectsOpacity = fadeIn;
+                                    m_uiOpacity = fadeIn;
                                 } else {
-                                    // 6-9s: fade out названия
-                                    qreal fadeOut = (9.0 - elapsed) / 3.0;
-                                    cameraOpacity = 1.0;
-                                    titleOpacity = fadeOut;
+                                    // 6-9s: исчезают надписи, остальное остается
+                                    m_videoOpacity = 1.0f;
+                                    m_3dObjectsOpacity = 1.0f;
+                                    m_uiOpacity = 1.0f;
+                                    // Надписи исчезают с fade out
+                                    float fadeOut = static_cast<float>((9.0 - elapsed) / 3.0); // 1 -> 0 за 3 секунды
+                                    m_titleOpacity = fadeOut;
                                 }
 
                                 QPainter p(&rgbFrame);
                                 p.setRenderHint(QPainter::Antialiasing, true);
 
-                                if (elapsed < 2.0) {
-                                    // Полностью черный экран
+                                // Применяем opacity к видео кадру
+                                if (m_videoOpacity < 1.0f) {
+                                    QImage cameraFrame = rgbFrame.copy();
                                     p.fillRect(rgbFrame.rect(), QColor(0, 0, 0, 255));
-                                } else {
-                                    // Применяем opacity к кадру камеры
-                                    if (cameraOpacity < 1.0) {
-                                        QImage cameraFrame = rgbFrame.copy();
-                                        p.fillRect(rgbFrame.rect(), QColor(0, 0, 0, 255));
-                                        p.setOpacity(cameraOpacity);
-                                        p.drawImage(0, 0, cameraFrame);
-                                        p.setOpacity(1.0);
-                                    }
-                                    // Затемнение для названия
-                                    if (titleOpacity > 0.0) {
-                                        QColor overlay(0, 0, 0, int(180 * titleOpacity));
-                                        p.fillRect(rgbFrame.rect(), overlay);
-                                    }
+                                    p.setOpacity(m_videoOpacity);
+                                    p.drawImage(0, 0, cameraFrame);
+                                    p.setOpacity(1.0);
                                 }
 
-                                // Титры (только если titleOpacity > 0)
-                                if (titleOpacity > 0.0 && elapsed >= 2.0) {
+                                // Рисуем надписи поверх всего (если titleOpacity > 0)
+                                if (m_titleOpacity > 0.0f) {
+                                    // "Spatial Home" по центру (сверху)
                                     QFont titleFont;
                                     titleFont.setFamily("Sans Serif");
                                     titleFont.setBold(true);
-                                    titleFont.setPointSizeF(std::max(24.0, rgbFrame.width() * 0.045));
+                                    titleFont.setPointSizeF(std::max(32.0, rgbFrame.width() * 0.05));
                                     p.setFont(titleFont);
-                                    p.setPen(QColor(255, 255, 255, int(255 * titleOpacity)));
+                                    p.setPen(QColor(255, 255, 255, int(255 * m_titleOpacity)));
                                     QString title = QString::fromUtf8("Spatial Home");
                                     QFontMetrics fmTitle(titleFont);
                                     int xTitle = (rgbFrame.width() - fmTitle.horizontalAdvance(title)) / 2;
-                                    int yTitle = int(rgbFrame.height() * 0.42);
+                                    int yTitle = int(rgbFrame.height() * 0.35); // По центру, немного выше
                                     p.drawText(xTitle, yTitle, title);
 
+                                    // "GlaskiOS" внизу по центру (как "Powered by Android")
                                     QFont subFont;
                                     subFont.setFamily("Sans Serif");
                                     subFont.setBold(false);
-                                    subFont.setPointSizeF(std::max(16.0, rgbFrame.width() * 0.018));
+                                    subFont.setPointSizeF(std::max(18.0, rgbFrame.width() * 0.025));
                                     p.setFont(subFont);
                                     QString sub = QString::fromUtf8("GlaskiOS");
                                     QFontMetrics fmSub(subFont);
                                     int xSub = (rgbFrame.width() - fmSub.horizontalAdvance(sub)) / 2;
-                                    int ySub = int(rgbFrame.height() * 0.42 + fmTitle.height() * 1.8);
-                                    p.setPen(QColor(255, 255, 255, int(255 * titleOpacity)));
+                                    int ySub = int(rgbFrame.height() * 0.85); // Внизу
+                                    p.setPen(QColor(255, 255, 255, int(255 * m_titleOpacity)));
                                     p.drawText(xSub, ySub, sub);
                                 }
                             }
@@ -413,6 +432,9 @@ bool Application::initializeSensorConnector()
                                  uint32_t width = static_cast<uint32_t>(rgbFrame.width());
                                  uint32_t height = static_cast<uint32_t>(rgbFrame.height());
                                  const uint8_t* rgbData = rgbFrame.constBits();
+                                 
+                                 // Применяем opacity к видео через renderer
+                                 m_renderer->setVideoOpacity(m_videoOpacity);
                                  
                                  // Рендерим видео фон для AR
                                  m_renderer->renderVideoBackground(rgbData, width, height);
@@ -454,6 +476,45 @@ void Application::update(float deltaTime)
     if (m_scene) {
         m_scene->update(deltaTime);
     }
+    
+#ifdef USE_SENSOR_CONNECTOR
+    // Обновляем splash анимацию даже если нет видео кадров
+    if (m_splashActive && m_splashStartMs > 0) {
+        qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+        qreal elapsed = qreal(nowMs - m_splashStartMs) / 1000.0;
+        
+        if (elapsed >= 9.0) {
+            m_splashActive = false;
+            m_videoOpacity = 1.0f;
+            m_3dObjectsOpacity = 1.0f;
+            m_uiOpacity = 1.0f;
+            m_titleOpacity = 0.0f;
+        } else {
+            // Вычисляем opacity для каждого компонента
+            if (elapsed < 3.0) {
+                // 0-3s: черный экран, появляются надписи
+                m_videoOpacity = 0.0f;
+                m_3dObjectsOpacity = 0.0f;
+                m_uiOpacity = 0.0f;
+                m_titleOpacity = static_cast<float>(elapsed / 3.0);
+            } else if (elapsed < 6.0) {
+                // 3-6s: появляется видео, 3D объекты и UI одновременно
+                m_titleOpacity = 1.0f;
+                float fadeIn = static_cast<float>((elapsed - 3.0) / 3.0);
+                m_videoOpacity = fadeIn;
+                m_3dObjectsOpacity = fadeIn;
+                m_uiOpacity = fadeIn;
+            } else {
+                // 6-9s: исчезают надписи
+                m_videoOpacity = 1.0f;
+                m_3dObjectsOpacity = 1.0f;
+                m_uiOpacity = 1.0f;
+                float fadeOut = static_cast<float>((9.0 - elapsed) / 3.0);
+                m_titleOpacity = fadeOut;
+            }
+        }
+    }
+#endif
 }
 
 void Application::render()
@@ -470,6 +531,10 @@ void Application::render()
     // 3. Наконец рендерим UI поверх всего
     
     // Рендеринг 3D объектов поверх видео фона (AR наложение)
+    // Применяем opacity для анимации
+#ifdef USE_SENSOR_CONNECTOR
+    m_renderer->set3DObjectsOpacity(m_3dObjectsOpacity);
+#endif
     if (m_scene) {
         auto camera = m_scene->getCamera();
         if (camera) {
@@ -482,11 +547,21 @@ void Application::render()
     }
     
     // Рендеринг UI поверх всего
+    // Применяем opacity для анимации
+#ifdef USE_SENSOR_CONNECTOR
+    // TODO: Добавить setOpacity в UIRenderer
     if (m_uiRenderer) {
         m_uiRenderer->beginFrame();
         m_uiRenderer->render();
         m_uiRenderer->endFrame();
     }
+#else
+    if (m_uiRenderer) {
+        m_uiRenderer->beginFrame();
+        m_uiRenderer->render();
+        m_uiRenderer->endFrame();
+    }
+#endif
     
     m_renderer->endFrame();
 }

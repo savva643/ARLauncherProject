@@ -32,6 +32,10 @@ public:
     virtual void render3DObjects(const std::vector<glm::mat4>& transforms, 
                                  const std::vector<uint32_t>& meshIds) = 0;
     
+    // Управление opacity для анимации
+    virtual void setVideoOpacity(float opacity) = 0;
+    virtual void set3DObjectsOpacity(float opacity) = 0;
+    
     virtual void setCameraMatrix(const glm::mat4& view, const glm::mat4& projection) = 0;
     
     // Утилиты
@@ -98,6 +102,7 @@ private:
     VkFormat m_swapchainImageFormat;
     VkExtent2D m_swapchainExtent;
     VkRenderPass m_renderPass;
+    VkRenderPass m_renderPassWithLoad; // Render pass с LOAD_OP_LOAD для видео фона
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
     VkCommandPool m_commandPool;
     std::vector<VkCommandBuffer> m_commandBuffers;
@@ -140,6 +145,7 @@ private:
     bool createSwapchain();
     bool createImageViews();
     bool createRenderPass();
+    bool createRenderPassWithLoad();
     bool createFramebuffers();
     bool createCommandPool();
     bool createCommandBuffers();
@@ -181,10 +187,15 @@ public:
     uint32_t createTexture(const uint8_t* data, uint32_t width, uint32_t height) override;
     void destroyTexture(uint32_t textureId) override;
 
+    void setVideoOpacity(float opacity) override;
+    void set3DObjectsOpacity(float opacity) override;
+
 private:
     uint32_t m_videoTexture;
     glm::mat4 m_viewMatrix;
     glm::mat4 m_projectionMatrix;
+    float m_videoOpacity;
+    float m_3dObjectsOpacity;
     
     struct Mesh {
         uint32_t vao;

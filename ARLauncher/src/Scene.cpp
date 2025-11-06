@@ -63,6 +63,25 @@ SceneObject* Scene::getObject(uint32_t objectId)
 void Scene::update(float deltaTime)
 {
     // Обновление анимаций объектов
+    static float time = 0.0f;
+    time += deltaTime;
+    
+    // Анимация вращения кубов
+    for (auto& obj : m_objects) {
+        if (obj.meshId == m_cubeMeshId) {
+            // Вращаем кубы вокруг оси Y
+            float rotationSpeed = 1.0f; // радиан в секунду
+            glm::quat rotationY = glm::angleAxis(time * rotationSpeed, glm::vec3(0.0f, 1.0f, 0.0f));
+            obj.rotation = rotationY;
+        } else if (obj.meshId == m_sphereMeshId) {
+            // Вращаем сферу вокруг оси X и Y
+            float rotationSpeedX = 0.5f;
+            float rotationSpeedY = 0.8f;
+            glm::quat rotationX = glm::angleAxis(time * rotationSpeedX, glm::vec3(1.0f, 0.0f, 0.0f));
+            glm::quat rotationY = glm::angleAxis(time * rotationSpeedY, glm::vec3(0.0f, 1.0f, 0.0f));
+            obj.rotation = rotationY * rotationX;
+        }
+    }
 }
 
 std::vector<glm::mat4> Scene::getObjectTransforms() const

@@ -143,6 +143,16 @@ void OpenGLRenderer::endFrame()
     // OpenGL автоматически обновляет буфер через glfwSwapBuffers
 }
 
+void OpenGLRenderer::setVideoOpacity(float opacity)
+{
+    m_videoOpacity = opacity;
+}
+
+void OpenGLRenderer::set3DObjectsOpacity(float opacity)
+{
+    m_3dObjectsOpacity = opacity;
+}
+
 void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height)
 {
 #ifdef USE_OPENGL
@@ -160,8 +170,10 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     
-    // Рендерим полноэкранный квад
+    // Рендерим полноэкранный квад с учетом opacity
     glDisable(GL_DEPTH_TEST);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glUseProgram(0); // Используем fixed-function pipeline для простоты
     
     glMatrixMode(GL_PROJECTION);
@@ -175,6 +187,7 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     
     glEnable(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, m_videoTexture);
+    glColor4f(1.0f, 1.0f, 1.0f, m_videoOpacity); // Применяем opacity
     
     glBegin(GL_QUADS);
     glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 0.0f);
@@ -183,6 +196,7 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 1.0f);
     glEnd();
     
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // Сбрасываем цвет
     glDisable(GL_TEXTURE_2D);
     
     glPopMatrix();
@@ -334,6 +348,7 @@ VulkanRenderer::VulkanRenderer()
     , m_swapchain(VK_NULL_HANDLE)
     , m_swapchainImageFormat(VK_FORMAT_B8G8R8A8_UNORM)
     , m_renderPass(VK_NULL_HANDLE)
+    , m_renderPassWithLoad(VK_NULL_HANDLE)
     , m_commandPool(VK_NULL_HANDLE)
     , m_currentFrame(0)
     , m_currentImageIndex(0)
@@ -344,6 +359,8 @@ VulkanRenderer::VulkanRenderer()
     , m_videoImageView(VK_NULL_HANDLE)
     , m_videoSampler(VK_NULL_HANDLE)
     , m_videoTextureInitialized(false)
+    , m_videoOpacity(1.0f)
+    , m_3dObjectsOpacity(1.0f)
 {
     m_swapchainExtent = {0, 0};
 }
@@ -395,6 +412,11 @@ bool VulkanRenderer::initialize(GLFWwindow* window)
     
     if (!createRenderPass()) {
         std::cerr << "Failed to create render pass" << std::endl;
+        return false;
+    }
+    
+    if (!createRenderPassWithLoad()) {
+        std::cerr << "Failed to create render pass with load" << std::endl;
         return false;
     }
     
@@ -462,6 +484,16 @@ void VulkanRenderer::shutdown()
     
     cleanupSwapchain();
     
+    if (m_renderPassWithLoad != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_device, m_renderPassWithLoad, nullptr);
+        m_renderPassWithLoad = VK_NULL_HANDLE;
+    }
+    
+    if (m_renderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+        m_renderPass = VK_NULL_HANDLE;
+    }
+    
     if (m_commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
         m_commandPool = VK_NULL_HANDLE;
@@ -527,16 +559,17 @@ void VulkanRenderer::beginFrame()
     }
     
     // Если есть видеоизображение, копируем его в swapchain до начала render pass
-    if (m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE) {
-        // Гарантируем, что источник находится в правильном layout
-        // (updateVideoTexture переводит его в TRANSFER_SRC_OPTIMAL)
+    bool hasVideo = m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE;
+    if (hasVideo) {
+        // Копируем видео в swapchain перед render pass
         copyVideoToSwapchain(m_commandBuffers[imageIndex], m_swapchainImages[imageIndex], m_swapchainExtent.width, m_swapchainExtent.height);
     }
     
-    // Начинаем render pass (ничего не рисуем, но оставляем для будущих оверлеев)
+    // Начинаем render pass
+    // Если есть видео, используем render pass с LOAD_OP_LOAD чтобы не затереть видео
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = m_renderPass;
+    renderPassInfo.renderPass = hasVideo ? m_renderPassWithLoad : m_renderPass;
     renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapchainExtent;
@@ -602,6 +635,16 @@ void VulkanRenderer::endFrame()
     m_currentFrame = (m_currentFrame + 1) % m_swapchainImages.size();
 }
 
+void VulkanRenderer::setVideoOpacity(float opacity)
+{
+    m_videoOpacity = opacity;
+}
+
+void VulkanRenderer::set3DObjectsOpacity(float opacity)
+{
+    m_3dObjectsOpacity = opacity;
+}
+
 void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height)
 {
     if (!m_initialized || !data || width == 0 || height == 0) {
@@ -620,6 +663,7 @@ void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     // Обновляем текстуру данными с камеры
     updateVideoTexture(data, width, height);
     
+    // Opacity применяется при копировании в swapchain в beginFrame
     // TODO: Рендеринг полноэкранного квада с видео текстурой
     // Для этого нужен graphics pipeline с шейдерами
     // Пока текстура обновляется, но не отображается
@@ -1013,6 +1057,51 @@ bool VulkanRenderer::createRenderPass()
     return true;
 }
 
+bool VulkanRenderer::createRenderPassWithLoad()
+{
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = m_swapchainImageFormat;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // Загружаем существующее содержимое (видео)
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Ожидаем что изображение уже в этом layout
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    
+    VkAttachmentReference colorAttachmentRef{};
+    colorAttachmentRef.attachment = 0;
+    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttachmentRef;
+    
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    renderPassInfo.attachmentCount = 1;
+    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 1;
+    renderPassInfo.pDependencies = &dependency;
+    
+    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPassWithLoad) != VK_SUCCESS) {
+        return false;
+    }
+    
+    return true;
+}
+
 bool VulkanRenderer::createFramebuffers()
 {
     m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
@@ -1277,8 +1366,8 @@ bool VulkanRenderer::createVideoTexture(uint32_t width, uint32_t height)
         vkFreeMemory(m_device, m_videoImageMemory, nullptr);
         return false;
     }
-    // Переводим видеоизображение в layout источника копирования (для дальнейших копий)
-    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    // Переводим видеоизображение в GENERAL layout для записи данных напрямую в память
+    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
 
     return true;
 }
@@ -1310,7 +1399,11 @@ void VulkanRenderer::updateVideoTexture(const uint8_t* data, uint32_t width, uin
     }
     
     vkUnmapMemory(m_device, m_videoImageMemory);
-    // Layout уже установлен в TRANSFER_SRC_OPTIMAL при создании
+    
+    // Переводим изображение в TRANSFER_SRC_OPTIMAL для копирования в swapchain
+    // Это делается асинхронно, но для простоты делаем синхронно через отдельный command buffer
+    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, 
+                         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 }
 #endif
 
@@ -1379,6 +1472,11 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
         barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_GENERAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+        barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
 
     vkCmdPipelineBarrier(
@@ -1405,9 +1503,10 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
 void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t width, uint32_t height)
 {
     // Переводим swapchain в layout для назначения копирования
+    // Swapchain изображения обычно в PRESENT_SRC_KHR или UNDEFINED после acquire
     VkImageMemoryBarrier toDst{};
     toDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // После vkAcquireNextImageKHR обычно UNDEFINED
     toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     toDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;

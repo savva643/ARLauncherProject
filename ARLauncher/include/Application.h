@@ -88,6 +88,10 @@ private:
     // Splash overlay state
     bool m_splashActive = true;
     qint64 m_splashStartMs = 0;
+    float m_videoOpacity = 0.0f;      // Opacity видео фона (0.0 - 1.0)
+    float m_3dObjectsOpacity = 0.0f;  // Opacity 3D объектов (0.0 - 1.0)
+    float m_uiOpacity = 0.0f;          // Opacity UI элементов (0.0 - 1.0)
+    float m_titleOpacity = 0.0f;       // Opacity надписей "Spatial Home" и "GlaskiOS" (0.0 - 1.0)
 #endif
 };
 
