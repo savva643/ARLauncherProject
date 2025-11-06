@@ -1,8 +1,8 @@
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/SpatialMappingSystem.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/SpatialMappingSystem.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -272,7 +272,7 @@ LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o: \
  /usr/include/c++/13/bits/memory_resource.h \
  /usr/include/c++/13/bits/uses_allocator.h \
  /usr/include/c++/13/bits/uses_allocator_args.h /usr/include/c++/13/tuple \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/Lidar3DProcessor.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/Lidar3DProcessor.h \
  /usr/include/c++/13/mutex /usr/include/c++/13/exception \
  /usr/include/c++/13/bits/exception_ptr.h \
  /usr/include/c++/13/bits/cxxabi_init_exception.h \

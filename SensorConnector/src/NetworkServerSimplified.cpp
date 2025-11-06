@@ -68,25 +68,35 @@ NetworkServerSimplified::~NetworkServerSimplified()
 void NetworkServerSimplified::startServers(quint16 tcpPort, quint16 udpPort)
 {
     qDebug() << "🚀 Starting simplified servers on TCP:" << tcpPort << "UDP:" << udpPort;
+    // Локальные адреса для информации
+    QStringList ipv4List;
+    for (const QHostAddress &addr : QNetworkInterface::allAddresses()) {
+        if (addr.protocol() == QAbstractSocket::IPv4Protocol && addr != QHostAddress::LocalHost) {
+            ipv4List << addr.toString();
+        }
+    }
+    qDebug() << "🌐 Local IPv4 addresses:" << ipv4List;
     
     if (m_serversRunning) {
         stopServers();
     }
     
     // Запуск TCP сервера
-    if (!m_tcpServer->listen(QHostAddress::Any, tcpPort)) {
+    if (!m_tcpServer->listen(QHostAddress::AnyIPv4, tcpPort)) {
         qWarning() << "❌ TCP Server failed:" << m_tcpServer->errorString();
         emit statusChanged("TCP Error: " + m_tcpServer->errorString());
         return;
     }
+    qDebug() << "✅ TCP listening on" << m_tcpServer->serverAddress().toString() << ":" << m_tcpServer->serverPort();
     
     // Запуск UDP сервера
-    if (!m_udpSocket->bind(QHostAddress::Any, udpPort)) {
+    if (!m_udpSocket->bind(QHostAddress::AnyIPv4, udpPort)) {
         qWarning() << "❌ UDP Server failed:" << m_udpSocket->errorString();
         emit statusChanged("UDP Error: " + m_udpSocket->errorString());
         m_tcpServer->close();
         return;
     }
+    qDebug() << "✅ UDP bound on" << m_udpSocket->localAddress().toString() << ":" << m_udpSocket->localPort();
     
     // Запуск USB сервера
     if (m_usbManager) {
@@ -274,6 +284,7 @@ void NetworkServerSimplified::handleUsbLidarConfidenceMap(const QByteArray &data
 
 void NetworkServerSimplified::handleTurboImageDecoded(const QImage &image, int dataSize, quint64 sequenceNumber)
 {
+    (void)dataSize; // unused parameter
     if (!image.isNull()) {
         emit frameDecoded(image, sequenceNumber);
     }

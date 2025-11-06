@@ -2,9 +2,8 @@
 #define FASTJPEGDECODER_H
 
 
-#include <QOpenGLTexture>
-#include <QOpenGLWidget>
-#include <QOpenGLFunctions>
+#include <QObject>
+#include <QImage>
 
 class FastJPEGDecoder : public QObject
 {

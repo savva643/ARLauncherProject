@@ -1,7 +1,7 @@
 CMakeFiles/ARLauncher.dir/src/main.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/src/main.cpp \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/src/main.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/include/Application.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/include/Application.h \
  /usr/include/c++/13/memory /usr/include/c++/13/bits/memoryfwd.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h \
@@ -166,9 +166,83 @@ CMakeFiles/ARLauncher.dir/src/main.cpp.o: \
  /usr/include/c++/13/compare /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
- /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/iostream \
- /usr/include/c++/13/ostream /usr/include/c++/13/ios \
- /usr/include/c++/13/bits/ios_base.h \
+ /usr/include/c++/13/bits/uniform_int_dist.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/QtGlobal \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qglobal.h \
+ /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
+ /usr/include/c++/13/cstdint /usr/include/assert.h \
+ /usr/lib/gcc/x86_64-linux-gnu/13/include/stdbool.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtversionchecks.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qconfig.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtcore-config.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtconfigmacros.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtcoreexports.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qglobal.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtpreprocessorsupport.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtnoop.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qsystemdetection.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qprocessordetection.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qcompilerdetection.h \
+ /usr/include/c++/13/version \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qassert.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtypes.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtclasshelpermacros.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtversion.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtypeinfo.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qcontainerfwd.h \
+ /usr/include/c++/13/variant /usr/include/c++/13/bits/parse_numbers.h \
+ /usr/include/c++/13/optional \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qsysinfo.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qlogging.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qflags.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qcompare_impl.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qatomic.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qbasicatomic.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qatomic_cxx11.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qgenericatomic.h \
+ /usr/include/c++/13/atomic \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qconstructormacros.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qdarwinhelpers.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qexceptionhandling.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qforeach.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtdeprecationmarkers.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qttypetraits.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qfunctionpointer.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qglobalstatic.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qmalloc.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qminmax.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qnumeric.h \
+ /usr/include/c++/13/cmath /usr/include/math.h \
+ /usr/include/x86_64-linux-gnu/bits/math-vector.h \
+ /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+ /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-logb.h \
+ /usr/include/x86_64-linux-gnu/bits/fp-fast.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+ /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
+ /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
+ /usr/include/c++/13/bits/specfun.h /usr/include/c++/13/limits \
+ /usr/include/c++/13/tr1/gamma.tcc \
+ /usr/include/c++/13/tr1/special_function_util.h \
+ /usr/include/c++/13/tr1/bessel_function.tcc \
+ /usr/include/c++/13/tr1/beta_function.tcc \
+ /usr/include/c++/13/tr1/ell_integral.tcc \
+ /usr/include/c++/13/tr1/exp_integral.tcc \
+ /usr/include/c++/13/tr1/hypergeometric.tcc \
+ /usr/include/c++/13/tr1/legendre_function.tcc \
+ /usr/include/c++/13/tr1/modified_bessel_func.tcc \
+ /usr/include/c++/13/tr1/poly_hermite.tcc \
+ /usr/include/c++/13/tr1/poly_laguerre.tcc \
+ /usr/include/c++/13/tr1/riemann_zeta.tcc \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qoverload.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qswap.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtenvironmentvariables.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qtresource.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qttranslation.h \
+ /home/savva/Qt/6.5.3/gcc_64/include/QtCore/qversiontagging.h \
+ /usr/include/c++/13/iostream /usr/include/c++/13/ostream \
+ /usr/include/c++/13/ios /usr/include/c++/13/bits/ios_base.h \
  /usr/include/c++/13/bits/locale_classes.h \
  /usr/include/c++/13/bits/locale_classes.tcc \
  /usr/include/c++/13/system_error \

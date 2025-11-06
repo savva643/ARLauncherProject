@@ -1,7 +1,7 @@
 CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/src/Renderer.cpp \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/src/Renderer.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/include/Renderer.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/include/Renderer.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \

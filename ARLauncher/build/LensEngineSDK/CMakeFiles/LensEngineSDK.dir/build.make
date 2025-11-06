@@ -53,10 +53,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher
+CMAKE_SOURCE_DIR = /home/savva/Documents/ARLauncherProject/ARLauncher
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build
+CMAKE_BINARY_DIR = /home/savva/Documents/ARLauncherProject/ARLauncher/build
 
 # Include any dependencies generated for this target.
 include LensEngineSDK/CMakeFiles/LensEngineSDK.dir/depend.make
@@ -70,102 +70,102 @@ include LensEngineSDK/CMakeFiles/LensEngineSDK.dir/progress.make
 include LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp > CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp > CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp -o CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngine.cpp -o CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.s
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp > CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp > CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp -o CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp -o CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.s
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp > CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp > CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp -o CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp -o CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.s
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp > CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp > CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp -o CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/Lidar3DProcessor.cpp -o CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.s
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp > CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp > CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp -o CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SpatialMappingSystem.cpp -o CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.s
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp > CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp > CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp -o CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/ARDataProcessor.cpp -o CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.s
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/flags.make
-LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/CameraController.cpp
+LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o: /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/CameraController.cpp
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o -c /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/CameraController.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o -MF CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o.d -o CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o -c /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/CameraController.cpp
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.i"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/CameraController.cpp > CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/CameraController.cpp > CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.i
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.s"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/CameraController.cpp -o CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && /usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/CameraController.cpp -o CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.s
 
 # Object files for target LensEngineSDK
 LensEngineSDK_OBJECTS = \
@@ -189,19 +189,19 @@ lib/libLensEngineSDK.a: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataPro
 lib/libLensEngineSDK.a: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o
 lib/libLensEngineSDK.a: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make
 lib/libLensEngineSDK.a: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking CXX static library ../lib/libLensEngineSDK.a"
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && $(CMAKE_COMMAND) -P CMakeFiles/LensEngineSDK.dir/cmake_clean_target.cmake
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/LensEngineSDK.dir/link.txt --verbose=$(VERBOSE)
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking CXX static library ../lib/libLensEngineSDK.a"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && $(CMAKE_COMMAND) -P CMakeFiles/LensEngineSDK.dir/cmake_clean_target.cmake
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/LensEngineSDK.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build: lib/libLensEngineSDK.a
 .PHONY : LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/clean:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK && $(CMAKE_COMMAND) -P CMakeFiles/LensEngineSDK.dir/cmake_clean.cmake
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK && $(CMAKE_COMMAND) -P CMakeFiles/LensEngineSDK.dir/cmake_clean.cmake
 .PHONY : LensEngineSDK/CMakeFiles/LensEngineSDK.dir/clean
 
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/depend:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK/CMakeFiles/LensEngineSDK.dir/DependInfo.cmake "--color=$(COLOR)"
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/savva/Documents/ARLauncherProject/ARLauncher /home/savva/Documents/ARLauncherProject/LensEngineSDK /home/savva/Documents/ARLauncherProject/ARLauncher/build /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK/CMakeFiles/LensEngineSDK.dir/DependInfo.cmake "--color=$(COLOR)"
 .PHONY : LensEngineSDK/CMakeFiles/LensEngineSDK.dir/depend
 

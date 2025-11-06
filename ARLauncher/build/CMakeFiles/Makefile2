@@ -54,10 +54,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher
+CMAKE_SOURCE_DIR = /home/savva/Documents/ARLauncherProject/ARLauncher
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build
+CMAKE_BINARY_DIR = /home/savva/Documents/ARLauncherProject/ARLauncher/build
 
 #=============================================================================
 # Directory level rules for the build root directory
@@ -98,14 +98,14 @@ LensEngineSDK/clean: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/clean
 CMakeFiles/ARLauncher.dir/all: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12,13 "Built target ARLauncher"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10,11,12,13 "Built target ARLauncher"
 .PHONY : CMakeFiles/ARLauncher.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/ARLauncher.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles 21
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles 21
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/ARLauncher.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles 0
 .PHONY : CMakeFiles/ARLauncher.dir/rule
 
 # Convenience name for target.
@@ -124,14 +124,14 @@ CMakeFiles/ARLauncher.dir/clean:
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/all:
 	$(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/depend
 	$(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=14,15,16,17,18,19,20,21 "Built target LensEngineSDK"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=14,15,16,17,18,19,20,21 "Built target LensEngineSDK"
 .PHONY : LensEngineSDK/CMakeFiles/LensEngineSDK.dir/all
 
 # Build rule for subdir invocation for target.
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles 8
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles 8
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles 0
 .PHONY : LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule
 
 # Convenience name for target.

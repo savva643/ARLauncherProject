@@ -147,6 +147,10 @@ private:
     void cleanupSwapchain();
     void recreateSwapchain();
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+
+    // Image operations for background blit path (no graphics pipeline required)
+    void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t width, uint32_t height);
 };
 #endif
 

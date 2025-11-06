@@ -1,3 +1,16 @@
+#ifdef USE_SENSOR_CONNECTOR
+#include <QtCore/qdatastream.h>
+#include <QtCore/qmetatype.h>
+#include <QImage>
+#include <QPainter>
+#include <QFont>
+#include <QFontMetrics>
+#include <QDateTime>
+#include <QGuiApplication>
+#include <QTimer>
+#include "SensorConnector.h"
+#endif
+
 #include "Application.h"
 #include "Renderer.h"
 #include "Scene.h"
@@ -7,11 +20,7 @@
 #include "Text.h"
 #include "Style.h"
 #include "LensEngineAPI.h"
-#ifdef USE_SENSOR_CONNECTOR
-#include "SensorConnector.h"
-#include <QCoreApplication>
-#include <QTimer>
-#endif
+
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #define GLFW_INCLUDE_NONE
@@ -97,8 +106,8 @@ void Application::run()
         
 #ifdef USE_SENSOR_CONNECTOR
         // Обрабатываем Qt события (для SensorConnector)
-        if (QCoreApplication::instance()) {
-            QCoreApplication::processEvents();
+        if (QGuiApplication::instance()) {
+            QGuiApplication::processEvents();
         }
 #endif
         
@@ -291,14 +300,15 @@ bool Application::initializeLensEngine()
 #ifdef USE_SENSOR_CONNECTOR
 bool Application::initializeSensorConnector()
 {
-    // Создаем QCoreApplication если его нет (для Qt event loop)
+    // Создаем QGuiApplication если его нет (для Qt event loop + QFont/QPainter)
     static int argc = 1;
     static char* argv[] = {(char*)"ARLauncher"};
-    if (!QCoreApplication::instance()) {
-        new QCoreApplication(argc, argv);
+    if (!QGuiApplication::instance()) {
+        new QGuiApplication(argc, argv);
     }
     
     m_sensorConnector = std::make_unique<SensorConnector::SensorConnectorCore>();
+    qRegisterMetaType<SensorConnector::SensorData>("SensorConnector::SensorData");
     
     if (!m_sensorConnector->initialize()) {
         std::cerr << "Failed to initialize SensorConnector" << std::endl;
@@ -309,8 +319,95 @@ bool Application::initializeSensorConnector()
     QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::frameDecoded,
                      [this](const QImage& frame, quint64 sequenceNumber) {
                          if (m_renderer && !frame.isNull()) {
-                             // Преобразуем QImage в RGB данные для рендеринга
-                             QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
+                            // Преобразуем QImage в RGB и наложим splash-оверлей (fade)
+                            QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
+
+                            // Splash анимация:
+                            // 0-2s: черный экран
+                            // 2-3s: fade in "Spatial Home" и "GlaskiOS" + камера/мир/UI
+                            // 3-6s: все видно
+                            // 6-9s: fade out названия, камера/мир/UI остаются
+                            if (m_splashActive) {
+                                qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+                                if (m_splashStartMs == 0) m_splashStartMs = nowMs;
+                                qreal elapsed = qreal(nowMs - m_splashStartMs) / 1000.0; // секунды
+                                if (elapsed >= 9.0) {
+                                    m_splashActive = false;
+                                    elapsed = 9.0;
+                                }
+
+                                qreal cameraOpacity = 0.0;
+                                qreal titleOpacity = 0.0;
+
+                                if (elapsed < 2.0) {
+                                    // 0-2s: черный экран
+                                    cameraOpacity = 0.0;
+                                    titleOpacity = 0.0;
+                                } else if (elapsed < 3.0) {
+                                    // 2-3s: fade in
+                                    qreal fadeIn = (elapsed - 2.0) / 1.0;
+                                    cameraOpacity = fadeIn;
+                                    titleOpacity = fadeIn;
+                                } else if (elapsed < 6.0) {
+                                    // 3-6s: все видно
+                                    cameraOpacity = 1.0;
+                                    titleOpacity = 1.0;
+                                } else {
+                                    // 6-9s: fade out названия
+                                    qreal fadeOut = (9.0 - elapsed) / 3.0;
+                                    cameraOpacity = 1.0;
+                                    titleOpacity = fadeOut;
+                                }
+
+                                QPainter p(&rgbFrame);
+                                p.setRenderHint(QPainter::Antialiasing, true);
+
+                                if (elapsed < 2.0) {
+                                    // Полностью черный экран
+                                    p.fillRect(rgbFrame.rect(), QColor(0, 0, 0, 255));
+                                } else {
+                                    // Применяем opacity к кадру камеры
+                                    if (cameraOpacity < 1.0) {
+                                        QImage cameraFrame = rgbFrame.copy();
+                                        p.fillRect(rgbFrame.rect(), QColor(0, 0, 0, 255));
+                                        p.setOpacity(cameraOpacity);
+                                        p.drawImage(0, 0, cameraFrame);
+                                        p.setOpacity(1.0);
+                                    }
+                                    // Затемнение для названия
+                                    if (titleOpacity > 0.0) {
+                                        QColor overlay(0, 0, 0, int(180 * titleOpacity));
+                                        p.fillRect(rgbFrame.rect(), overlay);
+                                    }
+                                }
+
+                                // Титры (только если titleOpacity > 0)
+                                if (titleOpacity > 0.0 && elapsed >= 2.0) {
+                                    QFont titleFont;
+                                    titleFont.setFamily("Sans Serif");
+                                    titleFont.setBold(true);
+                                    titleFont.setPointSizeF(std::max(24.0, rgbFrame.width() * 0.045));
+                                    p.setFont(titleFont);
+                                    p.setPen(QColor(255, 255, 255, int(255 * titleOpacity)));
+                                    QString title = QString::fromUtf8("Spatial Home");
+                                    QFontMetrics fmTitle(titleFont);
+                                    int xTitle = (rgbFrame.width() - fmTitle.horizontalAdvance(title)) / 2;
+                                    int yTitle = int(rgbFrame.height() * 0.42);
+                                    p.drawText(xTitle, yTitle, title);
+
+                                    QFont subFont;
+                                    subFont.setFamily("Sans Serif");
+                                    subFont.setBold(false);
+                                    subFont.setPointSizeF(std::max(16.0, rgbFrame.width() * 0.018));
+                                    p.setFont(subFont);
+                                    QString sub = QString::fromUtf8("GlaskiOS");
+                                    QFontMetrics fmSub(subFont);
+                                    int xSub = (rgbFrame.width() - fmSub.horizontalAdvance(sub)) / 2;
+                                    int ySub = int(rgbFrame.height() * 0.42 + fmTitle.height() * 1.8);
+                                    p.setPen(QColor(255, 255, 255, int(255 * titleOpacity)));
+                                    p.drawText(xSub, ySub, sub);
+                                }
+                            }
                              
                              if (!rgbFrame.isNull()) {
                                  uint32_t width = static_cast<uint32_t>(rgbFrame.width());

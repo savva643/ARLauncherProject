@@ -73,7 +73,7 @@ else()
 endif()
 
 # LensEngineSDK
-set(LENSENGINE_SDK_DIR "${CMAKE_SOURCE_DIR}/../LensEngineSDK")
+set(LENSENGINE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../LensEngineSDK")
 if(EXISTS "${LENSENGINE_SDK_DIR}/CMakeLists.txt")
     add_subdirectory(${LENSENGINE_SDK_DIR} ${CMAKE_BINARY_DIR}/LensEngineSDK)
     set(LENSENGINE_LIB LensEngineSDK)
@@ -82,10 +82,10 @@ else()
     set(LENSENGINE_LIB "")
 endif()
 
-# Include директории
-include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(${CMAKE_SOURCE_DIR}/src)
-include_directories(${CMAKE_SOURCE_DIR}/ui)
+# Include директории (используем текущий source dir, чтобы корректно работать как под-проект)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ui)
 
 # Исходные файлы
 set(ARLAUNCHER_SOURCES
@@ -194,14 +194,22 @@ option(USE_SENSOR_CONNECTOR "Use SensorConnector library" OFF)
 if(USE_SENSOR_CONNECTOR)
     # Указываем путь к Qt6
     set(Qt6_DIR "/home/savva/Qt/6.5.3/gcc_64/lib/cmake/Qt6" CACHE PATH "Qt6 directory")
-    find_package(Qt6 COMPONENTS Core Network REQUIRED)
-    set(SENSOR_CONNECTOR_DIR "${CMAKE_SOURCE_DIR}/../SensorConnector")
+    find_package(Qt6 COMPONENTS Core Network Gui REQUIRED)
+    set(SENSOR_CONNECTOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../SensorConnector")
     
     if(EXISTS "${SENSOR_CONNECTOR_DIR}/lib/libSensorConnector.a")
         target_link_libraries(ARLauncher PRIVATE 
             ${SENSOR_CONNECTOR_DIR}/lib/libSensorConnector.a
             Qt6::Core
             Qt6::Network
+            Qt6::Gui
+            turbojpeg
+            jpeg
+            avcodec
+            avformat
+            avutil
+            swscale
+            swresample
         )
         target_include_directories(ARLauncher PRIVATE ${SENSOR_CONNECTOR_DIR}/include)
         target_compile_definitions(ARLauncher PRIVATE USE_SENSOR_CONNECTOR)

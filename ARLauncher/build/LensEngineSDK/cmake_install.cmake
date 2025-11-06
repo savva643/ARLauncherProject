@@ -1,4 +1,4 @@
-# Install script for directory: /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK
+# Install script for directory: /home/savva/Documents/ARLauncherProject/LensEngineSDK
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -43,19 +43,19 @@ if(NOT DEFINED CMAKE_OBJDUMP)
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
-  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/lib/libLensEngineSDK.a")
+  file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/lib" TYPE STATIC_LIBRARY FILES "/home/savva/Documents/ARLauncherProject/ARLauncher/build/lib/libLensEngineSDK.a")
 endif()
 
 if(CMAKE_INSTALL_COMPONENT STREQUAL "Unspecified" OR NOT CMAKE_INSTALL_COMPONENT)
   file(INSTALL DESTINATION "${CMAKE_INSTALL_PREFIX}/include/LensEngineSDK" TYPE FILE FILES
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngine.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineAPI.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/SensorFusionEKF.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/Lidar3DProcessor.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/SpatialMappingSystem.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/ARDataProcessor.h"
-    "/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/CameraController.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngine.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineAPI.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/SensorFusionEKF.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/Lidar3DProcessor.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/SpatialMappingSystem.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/ARDataProcessor.h"
+    "/home/savva/Documents/ARLauncherProject/LensEngineSDK/include/CameraController.h"
     )
 endif()
 

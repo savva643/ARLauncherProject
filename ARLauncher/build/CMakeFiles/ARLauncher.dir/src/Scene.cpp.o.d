@@ -1,7 +1,7 @@
 CMakeFiles/ARLauncher.dir/src/Scene.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/src/Scene.cpp \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/src/Scene.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/include/Scene.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/include/Scene.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -334,8 +334,8 @@ CMakeFiles/ARLauncher.dir/src/Scene.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/types/error_t.h \
  /usr/include/c++/13/bits/charconv.h \
  /usr/include/c++/13/bits/basic_string.tcc \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/include/Camera.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/include/Renderer.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/include/Camera.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/include/Renderer.h \
  /usr/include/vulkan/vulkan.h /usr/include/vulkan/vk_platform.h \
  /usr/include/vulkan/vulkan_core.h \
  /usr/include/vk_video/vulkan_video_codec_h264std.h \

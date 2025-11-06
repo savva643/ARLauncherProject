@@ -1,7 +1,7 @@
 CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/UIRenderer.cpp \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIRenderer.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/UIRenderer.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIRenderer.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -278,7 +278,7 @@ CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o: \
  /usr/include/c++/13/backward/auto_ptr.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/UIElement.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIElement.h \
  /usr/include/c++/13/functional /usr/include/c++/13/bits/std_function.h \
  /usr/include/c++/13/unordered_map \
  /usr/include/c++/13/bits/unordered_map.h \
@@ -313,7 +313,7 @@ CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/types/error_t.h \
  /usr/include/c++/13/bits/charconv.h \
  /usr/include/c++/13/bits/basic_string.tcc \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/include/Renderer.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/include/Renderer.h \
  /usr/include/glm/gtc/matrix_transform.hpp \
  /usr/include/glm/ext/matrix_projection.hpp \
  /usr/include/glm/gtc/constants.hpp \

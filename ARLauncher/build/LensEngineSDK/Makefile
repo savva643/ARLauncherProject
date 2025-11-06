@@ -57,10 +57,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher
+CMAKE_SOURCE_DIR = /home/savva/Documents/ARLauncherProject/ARLauncher
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build
+CMAKE_BINARY_DIR = /home/savva/Documents/ARLauncherProject/ARLauncher/build
 
 #=============================================================================
 # Targets provided globally by CMake.
@@ -132,14 +132,14 @@ install/strip/fast: preinstall/fast
 
 # The main all target
 all: cmake_check_build_system
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/LensEngineSDK//CMakeFiles/progress.marks
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build/CMakeFiles 0
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles /home/savva/Documents/ARLauncherProject/ARLauncher/build/LensEngineSDK//CMakeFiles/progress.marks
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
 clean:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/clean
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/clean
 .PHONY : clean
 
 # The main clean target
@@ -148,22 +148,22 @@ clean/fast: clean
 
 # Prepare targets for installation.
 preinstall: all
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/preinstall
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/preinstall
 .PHONY : preinstall
 
 # Prepare targets for installation.
 preinstall/fast:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/preinstall
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/preinstall
 .PHONY : preinstall/fast
 
 # clear depends
 depend:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 1
 .PHONY : depend
 
 # Convenience name for target.
 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule
 .PHONY : LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule
 
 # Convenience name for target.
@@ -172,7 +172,7 @@ LensEngineSDK: LensEngineSDK/CMakeFiles/LensEngineSDK.dir/rule
 
 # fast build rule for target.
 LensEngineSDK/fast:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build
 .PHONY : LensEngineSDK/fast
 
 src/ARDataProcessor.o: src/ARDataProcessor.cpp.o
@@ -180,7 +180,7 @@ src/ARDataProcessor.o: src/ARDataProcessor.cpp.o
 
 # target to build an object file
 src/ARDataProcessor.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.o
 .PHONY : src/ARDataProcessor.cpp.o
 
 src/ARDataProcessor.i: src/ARDataProcessor.cpp.i
@@ -188,7 +188,7 @@ src/ARDataProcessor.i: src/ARDataProcessor.cpp.i
 
 # target to preprocess a source file
 src/ARDataProcessor.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.i
 .PHONY : src/ARDataProcessor.cpp.i
 
 src/ARDataProcessor.s: src/ARDataProcessor.cpp.s
@@ -196,7 +196,7 @@ src/ARDataProcessor.s: src/ARDataProcessor.cpp.s
 
 # target to generate assembly for a file
 src/ARDataProcessor.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/ARDataProcessor.cpp.s
 .PHONY : src/ARDataProcessor.cpp.s
 
 src/CameraController.o: src/CameraController.cpp.o
@@ -204,7 +204,7 @@ src/CameraController.o: src/CameraController.cpp.o
 
 # target to build an object file
 src/CameraController.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.o
 .PHONY : src/CameraController.cpp.o
 
 src/CameraController.i: src/CameraController.cpp.i
@@ -212,7 +212,7 @@ src/CameraController.i: src/CameraController.cpp.i
 
 # target to preprocess a source file
 src/CameraController.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.i
 .PHONY : src/CameraController.cpp.i
 
 src/CameraController.s: src/CameraController.cpp.s
@@ -220,7 +220,7 @@ src/CameraController.s: src/CameraController.cpp.s
 
 # target to generate assembly for a file
 src/CameraController.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/CameraController.cpp.s
 .PHONY : src/CameraController.cpp.s
 
 src/LensEngine.o: src/LensEngine.cpp.o
@@ -228,7 +228,7 @@ src/LensEngine.o: src/LensEngine.cpp.o
 
 # target to build an object file
 src/LensEngine.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.o
 .PHONY : src/LensEngine.cpp.o
 
 src/LensEngine.i: src/LensEngine.cpp.i
@@ -236,7 +236,7 @@ src/LensEngine.i: src/LensEngine.cpp.i
 
 # target to preprocess a source file
 src/LensEngine.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.i
 .PHONY : src/LensEngine.cpp.i
 
 src/LensEngine.s: src/LensEngine.cpp.s
@@ -244,7 +244,7 @@ src/LensEngine.s: src/LensEngine.cpp.s
 
 # target to generate assembly for a file
 src/LensEngine.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngine.cpp.s
 .PHONY : src/LensEngine.cpp.s
 
 src/LensEngineAPI.o: src/LensEngineAPI.cpp.o
@@ -252,7 +252,7 @@ src/LensEngineAPI.o: src/LensEngineAPI.cpp.o
 
 # target to build an object file
 src/LensEngineAPI.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o
 .PHONY : src/LensEngineAPI.cpp.o
 
 src/LensEngineAPI.i: src/LensEngineAPI.cpp.i
@@ -260,7 +260,7 @@ src/LensEngineAPI.i: src/LensEngineAPI.cpp.i
 
 # target to preprocess a source file
 src/LensEngineAPI.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.i
 .PHONY : src/LensEngineAPI.cpp.i
 
 src/LensEngineAPI.s: src/LensEngineAPI.cpp.s
@@ -268,7 +268,7 @@ src/LensEngineAPI.s: src/LensEngineAPI.cpp.s
 
 # target to generate assembly for a file
 src/LensEngineAPI.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.s
 .PHONY : src/LensEngineAPI.cpp.s
 
 src/Lidar3DProcessor.o: src/Lidar3DProcessor.cpp.o
@@ -276,7 +276,7 @@ src/Lidar3DProcessor.o: src/Lidar3DProcessor.cpp.o
 
 # target to build an object file
 src/Lidar3DProcessor.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.o
 .PHONY : src/Lidar3DProcessor.cpp.o
 
 src/Lidar3DProcessor.i: src/Lidar3DProcessor.cpp.i
@@ -284,7 +284,7 @@ src/Lidar3DProcessor.i: src/Lidar3DProcessor.cpp.i
 
 # target to preprocess a source file
 src/Lidar3DProcessor.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.i
 .PHONY : src/Lidar3DProcessor.cpp.i
 
 src/Lidar3DProcessor.s: src/Lidar3DProcessor.cpp.s
@@ -292,7 +292,7 @@ src/Lidar3DProcessor.s: src/Lidar3DProcessor.cpp.s
 
 # target to generate assembly for a file
 src/Lidar3DProcessor.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/Lidar3DProcessor.cpp.s
 .PHONY : src/Lidar3DProcessor.cpp.s
 
 src/SensorFusionEKF.o: src/SensorFusionEKF.cpp.o
@@ -300,7 +300,7 @@ src/SensorFusionEKF.o: src/SensorFusionEKF.cpp.o
 
 # target to build an object file
 src/SensorFusionEKF.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o
 .PHONY : src/SensorFusionEKF.cpp.o
 
 src/SensorFusionEKF.i: src/SensorFusionEKF.cpp.i
@@ -308,7 +308,7 @@ src/SensorFusionEKF.i: src/SensorFusionEKF.cpp.i
 
 # target to preprocess a source file
 src/SensorFusionEKF.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.i
 .PHONY : src/SensorFusionEKF.cpp.i
 
 src/SensorFusionEKF.s: src/SensorFusionEKF.cpp.s
@@ -316,7 +316,7 @@ src/SensorFusionEKF.s: src/SensorFusionEKF.cpp.s
 
 # target to generate assembly for a file
 src/SensorFusionEKF.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.s
 .PHONY : src/SensorFusionEKF.cpp.s
 
 src/SpatialMappingSystem.o: src/SpatialMappingSystem.cpp.o
@@ -324,7 +324,7 @@ src/SpatialMappingSystem.o: src/SpatialMappingSystem.cpp.o
 
 # target to build an object file
 src/SpatialMappingSystem.cpp.o:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.o
 .PHONY : src/SpatialMappingSystem.cpp.o
 
 src/SpatialMappingSystem.i: src/SpatialMappingSystem.cpp.i
@@ -332,7 +332,7 @@ src/SpatialMappingSystem.i: src/SpatialMappingSystem.cpp.i
 
 # target to preprocess a source file
 src/SpatialMappingSystem.cpp.i:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.i
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.i
 .PHONY : src/SpatialMappingSystem.cpp.i
 
 src/SpatialMappingSystem.s: src/SpatialMappingSystem.cpp.s
@@ -340,7 +340,7 @@ src/SpatialMappingSystem.s: src/SpatialMappingSystem.cpp.s
 
 # target to generate assembly for a file
 src/SpatialMappingSystem.cpp.s:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.s
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/src/SpatialMappingSystem.cpp.s
 .PHONY : src/SpatialMappingSystem.cpp.s
 
 # Help Target
@@ -388,6 +388,6 @@ help:
 # No rule that depends on this can have commands that come from listfiles
 # because they might be regenerated.
 cmake_check_build_system:
-	cd /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
+	cd /home/savva/Documents/ARLauncherProject/ARLauncher/build && $(CMAKE_COMMAND) -S$(CMAKE_SOURCE_DIR) -B$(CMAKE_BINARY_DIR) --check-build-system CMakeFiles/Makefile.cmake 0
 .PHONY : cmake_check_build_system
 

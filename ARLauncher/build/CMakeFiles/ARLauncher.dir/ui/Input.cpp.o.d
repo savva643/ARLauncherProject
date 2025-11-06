@@ -1,8 +1,8 @@
 CMakeFiles/ARLauncher.dir/ui/Input.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/Input.cpp \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Input.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/Input.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/UIElement.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Input.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIElement.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \

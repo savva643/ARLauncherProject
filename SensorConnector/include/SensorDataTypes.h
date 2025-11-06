@@ -4,6 +4,7 @@
 #include <QtCore/QByteArray>
 #include <QtCore/QVector>
 #include <QtCore/QString>
+#include <QtCore/QMetaType>
 
 namespace SensorConnector {
 
@@ -39,6 +40,9 @@ struct ConnectionStats {
 };
 
 } // namespace SensorConnector
+
+Q_DECLARE_METATYPE(SensorConnector::SensorData)
+Q_DECLARE_METATYPE(SensorConnector::ConnectionStats)
 
 #endif // SENSORDATATYPES_H
 

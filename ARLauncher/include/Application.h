@@ -14,6 +14,7 @@ namespace LensEngine {
 namespace SensorConnector {
     class SensorConnectorCore;
 }
+#include <QtCore/QtGlobal>
 #endif
 class Button;
 class Text;
@@ -82,6 +83,12 @@ private:
     // Статистика
     float m_deltaTime;
     float m_lastFrameTime;
+
+#ifdef USE_SENSOR_CONNECTOR
+    // Splash overlay state
+    bool m_splashActive = true;
+    qint64 m_splashStartMs = 0;
+#endif
 };
 
 #endif // APPLICATION_H

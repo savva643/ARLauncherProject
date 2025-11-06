@@ -1,8 +1,8 @@
 CMakeFiles/ARLauncher.dir/ui/Button.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/Button.cpp \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Button.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/Button.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/UIElement.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Button.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIElement.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -313,7 +313,7 @@ CMakeFiles/ARLauncher.dir/ui/Button.cpp.o: \
  /usr/include/c++/13/backward/auto_ptr.h \
  /usr/include/c++/13/pstl/glue_memory_defs.h \
  /usr/include/c++/13/pstl/execution_defs.h \
- /home/savva/Documents/GitHub/ARLauncherProject/ARLauncher/ui/Style.h \
+ /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Style.h \
  /usr/include/GLFW/glfw3.h /usr/include/GL/gl.h /usr/include/GL/glext.h \
  /usr/include/KHR/khrplatform.h /usr/include/c++/13/iostream \
  /usr/include/c++/13/ostream /usr/include/c++/13/ios \
