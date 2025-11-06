@@ -361,6 +361,8 @@ VulkanRenderer::VulkanRenderer()
     , m_videoTextureInitialized(false)
     , m_videoOpacity(1.0f)
     , m_3dObjectsOpacity(1.0f)
+    , m_videoWidth(0)
+    , m_videoHeight(0)
 {
     m_swapchainExtent = {0, 0};
 }
@@ -559,7 +561,7 @@ void VulkanRenderer::beginFrame()
     }
     
     // Если есть видеоизображение, копируем его в swapchain до начала render pass
-    bool hasVideo = m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE;
+    bool hasVideo = m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE && m_videoWidth > 0 && m_videoHeight > 0;
     if (hasVideo) {
         // Копируем видео в swapchain перед render pass
         copyVideoToSwapchain(m_commandBuffers[imageIndex], m_swapchainImages[imageIndex], m_swapchainExtent.width, m_swapchainExtent.height);
@@ -587,6 +589,33 @@ void VulkanRenderer::endFrame()
     uint32_t frameIndex = m_currentFrame % m_swapchainImages.size();
     
     vkCmdEndRenderPass(m_commandBuffers[imageIndex]);
+    
+    // Переводим swapchain изображение в PRESENT_SRC_KHR layout для отображения
+    // Это нужно всегда для правильного отображения
+    VkImageMemoryBarrier toPresent{};
+    toPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toPresent.image = m_swapchainImages[imageIndex];
+    toPresent.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    toPresent.subresourceRange.baseMipLevel = 0;
+    toPresent.subresourceRange.levelCount = 1;
+    toPresent.subresourceRange.baseArrayLayer = 0;
+    toPresent.subresourceRange.layerCount = 1;
+    toPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    toPresent.dstAccessMask = 0;
+    
+    vkCmdPipelineBarrier(
+        m_commandBuffers[imageIndex],
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        0,
+        0, nullptr,
+        0, nullptr,
+        1, &toPresent
+    );
     
     if (vkEndCommandBuffer(m_commandBuffers[imageIndex]) != VK_SUCCESS) {
         std::cerr << "Failed to record command buffer" << std::endl;
@@ -652,12 +681,32 @@ void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     }
     
     // Создаем или обновляем текстуру для видео
-    if (!m_videoTextureInitialized) {
+    if (!m_videoTextureInitialized || m_videoWidth != width || m_videoHeight != height) {
+        if (m_videoTextureInitialized) {
+            // Пересоздаем текстуру если размер изменился
+            if (m_videoSampler != VK_NULL_HANDLE) {
+                vkDestroySampler(m_device, m_videoSampler, nullptr);
+                m_videoSampler = VK_NULL_HANDLE;
+            }
+            if (m_videoImageView != VK_NULL_HANDLE) {
+                vkDestroyImageView(m_device, m_videoImageView, nullptr);
+                m_videoImageView = VK_NULL_HANDLE;
+            }
+            if (m_videoImage != VK_NULL_HANDLE) {
+                vkDestroyImage(m_device, m_videoImage, nullptr);
+                vkFreeMemory(m_device, m_videoImageMemory, nullptr);
+                m_videoImage = VK_NULL_HANDLE;
+                m_videoImageMemory = VK_NULL_HANDLE;
+            }
+        }
+        
         if (!createVideoTexture(width, height)) {
             std::cerr << "Failed to create video texture" << std::endl;
             return;
         }
         m_videoTextureInitialized = true;
+        m_videoWidth = width;
+        m_videoHeight = height;
     }
     
     // Обновляем текстуру данными с камеры
@@ -1299,7 +1348,7 @@ bool VulkanRenderer::createVideoTexture(uint32_t width, uint32_t height)
     imageInfo.format = VK_FORMAT_R8G8B8_UNORM;
     imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Нужен TRANSFER_SRC для копирования
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
@@ -1500,8 +1549,10 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
 }
 
-void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t width, uint32_t height)
+void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t swapchainWidth, uint32_t swapchainHeight)
 {
+    if (m_videoWidth == 0 || m_videoHeight == 0) return;
+    
     // Переводим swapchain в layout для назначения копирования
     // Swapchain изображения обычно в PRESENT_SRC_KHR или UNDEFINED после acquire
     VkImageMemoryBarrier toDst{};
@@ -1529,29 +1580,30 @@ void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapch
         1, &toDst
     );
 
-    // Регион копирования (matching the smaller side, simple stretch to fit)
-    VkImageCopy copyRegion{};
-    copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.srcSubresource.mipLevel = 0;
-    copyRegion.srcSubresource.baseArrayLayer = 0;
-    copyRegion.srcSubresource.layerCount = 1;
-    copyRegion.srcOffset = {0, 0, 0};
-
-    copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.dstSubresource.mipLevel = 0;
-    copyRegion.dstSubresource.baseArrayLayer = 0;
-    copyRegion.dstSubresource.layerCount = 1;
-    copyRegion.dstOffset = {0, 0, 0};
-
-    copyRegion.extent.width = std::min(width, m_swapchainExtent.width);
-    copyRegion.extent.height = std::min(height, m_swapchainExtent.height);
-    copyRegion.extent.depth = 1;
-
-    vkCmdCopyImage(
+    // Используем blit для масштабирования видео на весь экран
+    // Это позволяет правильно масштабировать изображение
+    VkImageBlit blitRegion{};
+    blitRegion.srcOffsets[0] = {0, 0, 0};
+    blitRegion.srcOffsets[1] = {static_cast<int32_t>(m_videoWidth), static_cast<int32_t>(m_videoHeight), 1};
+    blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blitRegion.srcSubresource.mipLevel = 0;
+    blitRegion.srcSubresource.baseArrayLayer = 0;
+    blitRegion.srcSubresource.layerCount = 1;
+    
+    blitRegion.dstOffsets[0] = {0, 0, 0};
+    blitRegion.dstOffsets[1] = {static_cast<int32_t>(swapchainWidth), static_cast<int32_t>(swapchainHeight), 1};
+    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    blitRegion.dstSubresource.mipLevel = 0;
+    blitRegion.dstSubresource.baseArrayLayer = 0;
+    blitRegion.dstSubresource.layerCount = 1;
+    
+    // Используем blit для масштабирования
+    vkCmdBlitImage(
         cmd,
         m_videoImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         dstSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, &copyRegion
+        1, &blitRegion,
+        VK_FILTER_LINEAR // Линейная фильтрация для плавного масштабирования
     );
 
     // Возвращаем swapchain изображение в layout для color attachment

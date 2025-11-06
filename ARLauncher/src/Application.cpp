@@ -27,6 +27,8 @@
 #include <GL/gl.h>
 #endif
 #include <iostream>
+#include <iomanip>
+#include <cmath>
 #include <chrono>
 #include <memory>
 #include <glm/glm.hpp>
@@ -449,8 +451,58 @@ bool Application::initializeSensorConnector()
                      });
     
     // Подключаем сигналы для получения других данных (IMU, LiDAR и т.д.)
+    static int imuLogCounter = 0;
     QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::dataReceived,
                      [this](const SensorConnector::SensorData& data) {
+                         // Логируем IMU данные раз в 60 FPS (каждые 60 кадров)
+                         if (data.type == SensorConnector::RAW_IMU && data.payload.size() >= 104) {
+                             if (imuLogCounter++ % 60 == 0) {
+                                 // Парсим IMU данные (формат: timestamp(8) + accel(24) + gyro(24) + gravity(24) + mag(24))
+                                 const char* rawData = data.payload.constData();
+                                 double accelX, accelY, accelZ;
+                                 double gyroX, gyroY, gyroZ;
+                                 double gravityX, gravityY, gravityZ;
+                                 
+                                 memcpy(&accelX, rawData + 8, 8);
+                                 memcpy(&accelY, rawData + 16, 8);
+                                 memcpy(&accelZ, rawData + 24, 8);
+                                 memcpy(&gyroX, rawData + 32, 8);
+                                 memcpy(&gyroY, rawData + 40, 8);
+                                 memcpy(&gyroZ, rawData + 48, 8);
+                                 memcpy(&gravityX, rawData + 56, 8);
+                                 memcpy(&gravityY, rawData + 64, 8);
+                                 memcpy(&gravityZ, rawData + 72, 8);
+                                 
+                                 // Вычисляем ориентацию из gravity (упрощенная версия)
+                                 // Gravity вектор указывает вниз, из него можно вычислить pitch и roll
+                                 float pitch = std::atan2(-gravityX, std::sqrt(gravityY * gravityY + gravityZ * gravityZ));
+                                 float roll = std::atan2(gravityY, gravityZ);
+                                 
+                                 // Yaw из магнитометра (если доступен)
+                                 double magX, magY, magZ;
+                                 memcpy(&magX, rawData + 80, 8);
+                                 memcpy(&magY, rawData + 88, 8);
+                                 memcpy(&magZ, rawData + 96, 8);
+                                 
+                                 std::cout << "📱 IMU 6DOF (Seq: " << data.sequenceNumber << "): "
+                                           << "Pos: (0, 0, 0) "  // Позиция будет из AR tracking
+                                           << "Rot: (" << std::fixed << std::setprecision(2)
+                                           << "P:" << pitch * 180.0f / 3.14159f << "° "
+                                           << "R:" << roll * 180.0f / 3.14159f << "° "
+                                           << "Y:0°) "
+                                           << "Accel:(" << accelX << "," << accelY << "," << accelZ << ") "
+                                           << "Gyro:(" << gyroX << "," << gyroY << "," << gyroZ << ")" << std::endl;
+                                 
+                                 // Обновляем камеру из IMU данных
+                                 if (m_scene && m_scene->getCamera()) {
+                                     // Преобразуем pitch/roll в quaternion
+                                     glm::quat rotation = glm::angleAxis(roll, glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                                         glm::angleAxis(pitch, glm::vec3(1.0f, 0.0f, 0.0f));
+                                     m_scene->updateCameraFromAR(glm::vec3(0.0f, 0.0f, 0.0f), rotation);
+                                 }
+                             }
+                         }
+                         
                          // Передаем данные в LensEngine
                          if (m_lensEngine) {
                              // TODO: Преобразовать SensorData в формат LensEngine

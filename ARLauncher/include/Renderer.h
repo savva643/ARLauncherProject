@@ -135,6 +135,8 @@ private:
     bool m_videoTextureInitialized;
     float m_videoOpacity;  // Opacity для видео фона (0.0 - 1.0)
     float m_3dObjectsOpacity;  // Opacity для 3D объектов (0.0 - 1.0)
+    uint32_t m_videoWidth;  // Ширина видео текстуры
+    uint32_t m_videoHeight; // Высота видео текстуры
     
     // Вспомогательные методы для создания буферов
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
