@@ -82,6 +82,9 @@ public:
     
     uint32_t createTexture(const uint8_t* data, uint32_t width, uint32_t height) override;
     void destroyTexture(uint32_t textureId) override;
+    
+    void setVideoOpacity(float opacity) override;
+    void set3DObjectsOpacity(float opacity) override;
 
 private:
     glm::mat4 m_viewMatrix;
@@ -130,6 +133,8 @@ private:
     VkImageView m_videoImageView;
     VkSampler m_videoSampler;
     bool m_videoTextureInitialized;
+    float m_videoOpacity;  // Opacity для видео фона (0.0 - 1.0)
+    float m_3dObjectsOpacity;  // Opacity для 3D объектов (0.0 - 1.0)
     
     // Вспомогательные методы для создания буферов
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
