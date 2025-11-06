@@ -22,7 +22,34 @@ if [ ! -f "SensorConnector.pro" ]; then
     exit 1
 fi
 
-qmake SensorConnector.pro
+# Очистка предыдущей сборки
+echo "🧹 Cleaning previous build..."
+if [ -f "Makefile" ]; then
+    make clean 2>/dev/null || true
+fi
+rm -f Makefile* *.o moc_* 2>/dev/null || true
+rm -rf build/obj build/moc 2>/dev/null || true
+
+# Поиск qmake
+QMAKE_CMD="qmake"
+if [ -f "/home/savva/Qt/6.5.3/gcc_64/bin/qmake6" ]; then
+    QMAKE_CMD="/home/savva/Qt/6.5.3/gcc_64/bin/qmake6"
+    echo "📦 Using Qt qmake: $QMAKE_CMD"
+elif command -v qmake6 &> /dev/null; then
+    QMAKE_CMD="qmake6"
+elif command -v qmake &> /dev/null; then
+    QMAKE_CMD="qmake"
+else
+    echo "❌ qmake not found! Please install Qt or set QMAKE path"
+    exit 1
+fi
+
+# Генерация Makefile
+echo "📦 Generating Makefile..."
+$QMAKE_CMD SensorConnector.pro
+
+# Сборка
+echo "🔨 Building SensorConnector..."
 make -j$(nproc)
 
 if [ ! -f "lib/libSensorConnector.a" ]; then
@@ -44,7 +71,15 @@ if [ ! -d "build" ]; then
 fi
 
 cd build
+
+# Очистка предыдущей сборки (опционально)
+echo "🧹 Cleaning previous build..."
+rm -rf CMakeCache.txt CMakeFiles/ 2>/dev/null || true
+
+# Конфигурация и сборка
+echo "📦 Configuring CMake..."
 cmake ..
+echo "🔨 Building LensEngineSDK..."
 make -j$(nproc)
 
 if [ ! -f "lib/libLensEngineSDK.a" ]; then
@@ -67,6 +102,10 @@ fi
 
 cd build
 
+# Очистка предыдущей сборки (опционально)
+echo "🧹 Cleaning previous build..."
+rm -rf CMakeCache.txt CMakeFiles/ 2>/dev/null || true
+
 # Настраиваем пути к библиотекам
 SENSOR_CONNECTOR_LIB="../../SensorConnector/lib/libSensorConnector.a"
 LENS_ENGINE_SDK_DIR="../../LensEngineSDK"
@@ -77,6 +116,7 @@ if [ ! -f "$SENSOR_CONNECTOR_LIB" ]; then
 fi
 
 # Конфигурация CMake с Vulkan и SensorConnector
+echo "📦 Configuring CMake..."
 cmake .. \
     -DUSE_VULKAN=ON \
     -DUSE_SENSOR_CONNECTOR=ON \
