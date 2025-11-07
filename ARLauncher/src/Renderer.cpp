@@ -6,12 +6,161 @@
 
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
+#define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
+#include <GL/glext.h>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 #include <cctype>
+
+// Объявления функций OpenGL 3.3+ (если не определены в glext.h)
+#ifndef GL_VERSION_3_0
+typedef void (APIENTRY *PFNGLGENVERTEXARRAYSPROC)(GLsizei, GLuint*);
+typedef void (APIENTRY *PFNGLBINDVERTEXARRAYPROC)(GLuint);
+typedef void (APIENTRY *PFNGLDELETEVERTEXARRAYSPROC)(GLsizei, const GLuint*);
+typedef void (APIENTRY *PFNGLGENBUFFERSPROC)(GLsizei, GLuint*);
+typedef void (APIENTRY *PFNGLBINDBUFFERPROC)(GLenum, GLuint);
+typedef void (APIENTRY *PFNGLBUFFERDATAPROC)(GLenum, GLsizeiptr, const void*, GLenum);
+typedef void (APIENTRY *PFNGLDELETEBUFFERSPROC)(GLsizei, const GLuint*);
+typedef void (APIENTRY *PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint);
+typedef void (APIENTRY *PFNGLVERTEXATTRIBPOINTERPROC)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
+typedef GLuint (APIENTRY *PFNGLCREATESHADERPROC)(GLenum);
+typedef void (APIENTRY *PFNGLSHADERSOURCEPROC)(GLuint, GLsizei, const GLchar* const*, const GLint*);
+typedef void (APIENTRY *PFNGLCOMPILESHADERPROC)(GLuint);
+typedef void (APIENTRY *PFNGLGETSHADERIVPROC)(GLuint, GLenum, GLint*);
+typedef void (APIENTRY *PFNGLGETSHADERINFOLOGPROC)(GLuint, GLsizei, GLsizei*, GLchar*);
+typedef void (APIENTRY *PFNGLDELETESHADERPROC)(GLuint);
+typedef GLuint (APIENTRY *PFNGLCREATEPROGRAMPROC)(void);
+typedef void (APIENTRY *PFNGLATTACHSHADERPROC)(GLuint, GLuint);
+typedef void (APIENTRY *PFNGLLINKPROGRAMPROC)(GLuint);
+typedef void (APIENTRY *PFNGLGETPROGRAMIVPROC)(GLuint, GLenum, GLint*);
+typedef void (APIENTRY *PFNGLGETPROGRAMINFOLOGPROC)(GLuint, GLsizei, GLsizei*, GLchar*);
+typedef void (APIENTRY *PFNGLDELETEPROGRAMPROC)(GLuint);
+typedef void (APIENTRY *PFNGLUSEPROGRAMPROC)(GLuint);
+typedef GLint (APIENTRY *PFNGLGETUNIFORMLOCATIONPROC)(GLuint, const GLchar*);
+typedef void (APIENTRY *PFNGLUNIFORM1FPROC)(GLint, GLfloat);
+typedef void (APIENTRY *PFNGLUNIFORM1IPROC)(GLint, GLint);
+typedef void (APIENTRY *PFNGLUNIFORM3FPROC)(GLint, GLfloat, GLfloat, GLfloat);
+typedef void (APIENTRY *PFNGLUNIFORMMATRIX4FVPROC)(GLint, GLsizei, GLboolean, const GLfloat*);
+typedef void (APIENTRY *PFNGLGENFRAMEBUFFERSPROC)(GLsizei, GLuint*);
+typedef void (APIENTRY *PFNGLBINDFRAMEBUFFERPROC)(GLenum, GLuint);
+typedef void (APIENTRY *PFNGLFRAMEBUFFERTEXTURE2DPROC)(GLenum, GLenum, GLenum, GLuint, GLint);
+typedef GLenum (APIENTRY *PFNGLCHECKFRAMEBUFFERSTATUSPROC)(GLenum);
+typedef void (APIENTRY *PFNGLGENRENDERBUFFERSPROC)(GLsizei, GLuint*);
+typedef void (APIENTRY *PFNGLBINDRENDERBUFFERPROC)(GLenum, GLuint);
+typedef void (APIENTRY *PFNGLRENDERBUFFERSTORAGEPROC)(GLenum, GLenum, GLsizei, GLsizei);
+typedef void (APIENTRY *PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum, GLenum, GLenum, GLuint);
+typedef void (APIENTRY *PFNGLDELETEFRAMEBUFFERSPROC)(GLsizei, const GLuint*);
+typedef void (APIENTRY *PFNGLDELETERENDERBUFFERSPROC)(GLsizei, const GLuint*);
+typedef void (APIENTRY *PFNGLDRAWARRAYSPROC)(GLenum, GLint, GLsizei);
+typedef void (APIENTRY *PFNGLDRAWELEMENTSPROC)(GLenum, GLsizei, GLenum, const void*);
+typedef void (APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum);
+
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
+PFNGLBINDVERTEXARRAYPROC glBindVertexArray = nullptr;
+PFNGLDELETEVERTEXARRAYSPROC glDeleteVertexArrays = nullptr;
+PFNGLGENBUFFERSPROC glGenBuffers = nullptr;
+PFNGLBINDBUFFERPROC glBindBuffer = nullptr;
+PFNGLBUFFERDATAPROC glBufferData = nullptr;
+PFNGLDELETEBUFFERSPROC glDeleteBuffers = nullptr;
+PFNGLENABLEVERTEXATTRIBARRAYPROC glEnableVertexAttribArray = nullptr;
+PFNGLVERTEXATTRIBPOINTERPROC glVertexAttribPointer = nullptr;
+PFNGLCREATESHADERPROC glCreateShader = nullptr;
+PFNGLSHADERSOURCEPROC glShaderSource = nullptr;
+PFNGLCOMPILESHADERPROC glCompileShader = nullptr;
+PFNGLGETSHADERIVPROC glGetShaderiv = nullptr;
+PFNGLGETSHADERINFOLOGPROC glGetShaderInfoLog = nullptr;
+PFNGLDELETESHADERPROC glDeleteShader = nullptr;
+PFNGLCREATEPROGRAMPROC glCreateProgram = nullptr;
+PFNGLATTACHSHADERPROC glAttachShader = nullptr;
+PFNGLLINKPROGRAMPROC glLinkProgram = nullptr;
+PFNGLGETPROGRAMIVPROC glGetProgramiv = nullptr;
+PFNGLGETPROGRAMINFOLOGPROC glGetProgramInfoLog = nullptr;
+PFNGLDELETEPROGRAMPROC glDeleteProgram = nullptr;
+PFNGLUSEPROGRAMPROC glUseProgram = nullptr;
+PFNGLGETUNIFORMLOCATIONPROC glGetUniformLocation = nullptr;
+PFNGLUNIFORM1FPROC glUniform1f = nullptr;
+PFNGLUNIFORM1IPROC glUniform1i = nullptr;
+PFNGLUNIFORM3FPROC glUniform3f = nullptr;
+PFNGLUNIFORMMATRIX4FVPROC glUniformMatrix4fv = nullptr;
+PFNGLGENFRAMEBUFFERSPROC glGenFramebuffers = nullptr;
+PFNGLBINDFRAMEBUFFERPROC glBindFramebuffer = nullptr;
+PFNGLFRAMEBUFFERTEXTURE2DPROC glFramebufferTexture2D = nullptr;
+PFNGLCHECKFRAMEBUFFERSTATUSPROC glCheckFramebufferStatus = nullptr;
+PFNGLGENRENDERBUFFERSPROC glGenRenderbuffers = nullptr;
+PFNGLBINDRENDERBUFFERPROC glBindRenderbuffer = nullptr;
+PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
+PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = nullptr;
+PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = nullptr;
+PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = nullptr;
+PFNGLDRAWARRAYSPROC glDrawArrays = nullptr;
+PFNGLDRAWELEMENTSPROC glDrawElements = nullptr;
+PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
+#endif
+
+// Загрузка указателей на функции OpenGL через GLFW
+static bool LoadOpenGLFunctions() {
+    static bool loaded = false;
+    if (loaded) return true;
+    
+    #define LOAD_GL_FUNC(name) \
+        name = (decltype(name))glfwGetProcAddress(#name); \
+        if (!name) { \
+            std::cerr << "[WARN] Failed to load OpenGL function: " #name << std::endl; \
+        }
+    
+    LOAD_GL_FUNC(glGenVertexArrays);
+    LOAD_GL_FUNC(glBindVertexArray);
+    LOAD_GL_FUNC(glDeleteVertexArrays);
+    LOAD_GL_FUNC(glGenBuffers);
+    LOAD_GL_FUNC(glBindBuffer);
+    LOAD_GL_FUNC(glBufferData);
+    LOAD_GL_FUNC(glDeleteBuffers);
+    LOAD_GL_FUNC(glEnableVertexAttribArray);
+    LOAD_GL_FUNC(glVertexAttribPointer);
+    LOAD_GL_FUNC(glCreateShader);
+    LOAD_GL_FUNC(glShaderSource);
+    LOAD_GL_FUNC(glCompileShader);
+    LOAD_GL_FUNC(glGetShaderiv);
+    LOAD_GL_FUNC(glGetShaderInfoLog);
+    LOAD_GL_FUNC(glDeleteShader);
+    LOAD_GL_FUNC(glCreateProgram);
+    LOAD_GL_FUNC(glAttachShader);
+    LOAD_GL_FUNC(glLinkProgram);
+    LOAD_GL_FUNC(glGetProgramiv);
+    LOAD_GL_FUNC(glGetProgramInfoLog);
+    LOAD_GL_FUNC(glDeleteProgram);
+    LOAD_GL_FUNC(glUseProgram);
+    LOAD_GL_FUNC(glGetUniformLocation);
+    LOAD_GL_FUNC(glUniform1f);
+    LOAD_GL_FUNC(glUniform1i);
+    LOAD_GL_FUNC(glUniform3f);
+    LOAD_GL_FUNC(glUniformMatrix4fv);
+    LOAD_GL_FUNC(glGenFramebuffers);
+    LOAD_GL_FUNC(glBindFramebuffer);
+    LOAD_GL_FUNC(glFramebufferTexture2D);
+    LOAD_GL_FUNC(glCheckFramebufferStatus);
+    LOAD_GL_FUNC(glGenRenderbuffers);
+    LOAD_GL_FUNC(glBindRenderbuffer);
+    LOAD_GL_FUNC(glRenderbufferStorage);
+    LOAD_GL_FUNC(glFramebufferRenderbuffer);
+    LOAD_GL_FUNC(glDeleteFramebuffers);
+    LOAD_GL_FUNC(glDeleteRenderbuffers);
+    LOAD_GL_FUNC(glDrawArrays);
+    LOAD_GL_FUNC(glDrawElements);
+    LOAD_GL_FUNC(glActiveTexture);
+    
+    #undef LOAD_GL_FUNC
+    
+    loaded = true;
+    return true;
+}
+#endif
 
 // Встроенная реализация simple_nvg для избежания проблем с путями
 namespace {
@@ -272,6 +421,12 @@ bool OpenGLRenderer::initialize(GLFWwindow* window)
     glfwMakeContextCurrent(window);
     if (glfwGetCurrentContext() != window) {
         std::cerr << "OpenGLRenderer::initialize: failed to make context current" << std::endl;
+        return false;
+    }
+    
+    // Загружаем функции OpenGL 3.3+
+    if (!LoadOpenGLFunctions()) {
+        std::cerr << "[ERROR] Failed to load OpenGL 3.3+ functions" << std::endl;
         return false;
     }
     
