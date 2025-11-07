@@ -8,6 +8,7 @@
 #ifdef USE_OPENGL
 #define GL_GLEXT_PROTOTYPES
 #include <GL/gl.h>
+#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -56,9 +57,7 @@ typedef void (APIENTRY *PFNGLRENDERBUFFERSTORAGEPROC)(GLenum, GLenum, GLsizei, G
 typedef void (APIENTRY *PFNGLFRAMEBUFFERRENDERBUFFERPROC)(GLenum, GLenum, GLenum, GLuint);
 typedef void (APIENTRY *PFNGLDELETEFRAMEBUFFERSPROC)(GLsizei, const GLuint*);
 typedef void (APIENTRY *PFNGLDELETERENDERBUFFERSPROC)(GLsizei, const GLuint*);
-typedef void (APIENTRY *PFNGLDRAWARRAYSPROC)(GLenum, GLint, GLsizei);
-typedef void (APIENTRY *PFNGLDRAWELEMENTSPROC)(GLenum, GLsizei, GLenum, const void*);
-typedef void (APIENTRY *PFNGLACTIVETEXTUREPROC)(GLenum);
+// Примечание: glDrawArrays, glDrawElements, glActiveTexture уже объявлены в GL/gl.h, не переопределяем
 
 // Глобальные указатели на функции OpenGL 3.3+
 PFNGLGENVERTEXARRAYSPROC glGenVertexArrays = nullptr;
@@ -98,9 +97,6 @@ PFNGLRENDERBUFFERSTORAGEPROC glRenderbufferStorage = nullptr;
 PFNGLFRAMEBUFFERRENDERBUFFERPROC glFramebufferRenderbuffer = nullptr;
 PFNGLDELETEFRAMEBUFFERSPROC glDeleteFramebuffers = nullptr;
 PFNGLDELETERENDERBUFFERSPROC glDeleteRenderbuffers = nullptr;
-PFNGLDRAWARRAYSPROC glDrawArrays = nullptr;
-PFNGLDRAWELEMENTSPROC glDrawElements = nullptr;
-PFNGLACTIVETEXTUREPROC glActiveTexture = nullptr;
 
 // Загрузка указателей на функции OpenGL через GLFW
 static bool LoadOpenGLFunctions() {
@@ -150,9 +146,7 @@ static bool LoadOpenGLFunctions() {
     LOAD_GL_FUNC(glFramebufferRenderbuffer);
     LOAD_GL_FUNC(glDeleteFramebuffers);
     LOAD_GL_FUNC(glDeleteRenderbuffers);
-    LOAD_GL_FUNC(glDrawArrays);
-    LOAD_GL_FUNC(glDrawElements);
-    LOAD_GL_FUNC(glActiveTexture);
+    // glDrawArrays, glDrawElements, glActiveTexture уже доступны из GL/gl.h
     
     #undef LOAD_GL_FUNC
     
