@@ -215,6 +215,23 @@ private:
     std::string readShaderFile(const char* filepath);
     void createFullscreenQuad();
     void createUIQuad();
+    
+    struct UIWindow {
+        uint32_t id;
+        uint32_t fbo;
+        uint32_t texture;
+        uint32_t rbo;
+        glm::vec3 position;
+        glm::vec2 size;
+        bool billboard;
+        std::string title;
+        std::string subtitle;
+        bool hasButton;
+        std::string buttonText;
+        int pixelWidth;
+        int pixelHeight;
+    };
+    
     void renderUIWindowContent(const UIWindow& window);
 
     uint32_t m_videoTexture;
@@ -240,22 +257,6 @@ private:
         uint32_t vbo;
         uint32_t ebo;
         size_t indexCount;
-    };
-    
-    struct UIWindow {
-        uint32_t id;
-        uint32_t fbo;
-        uint32_t texture;
-        uint32_t rbo;
-        glm::vec3 position;
-        glm::vec2 size;
-        bool billboard;
-        std::string title;
-        std::string subtitle;
-        bool hasButton;
-        std::string buttonText;
-        int pixelWidth;
-        int pixelHeight;
     };
 
     std::vector<Mesh> m_meshes;
