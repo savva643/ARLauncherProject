@@ -854,6 +854,128 @@ uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
 #endif
 }
 
+void OpenGLRenderer::setVideoOpacity(float opacity)
+{
+#ifdef USE_OPENGL
+    m_videoOpacity = opacity;
+#else
+    (void)opacity;
+#endif
+}
+
+void OpenGLRenderer::set3DObjectsOpacity(float opacity)
+{
+#ifdef USE_OPENGL
+    m_3dObjectsOpacity = opacity;
+#else
+    (void)opacity;
+#endif
+}
+
+uint32_t OpenGLRenderer::createMesh(const std::vector<float>& vertices, 
+                                    const std::vector<uint32_t>& indices)
+{
+#ifdef USE_OPENGL
+    if (vertices.empty() || indices.empty()) {
+        return 0;
+    }
+
+    Mesh mesh;
+    mesh.indexCount = indices.size();
+
+    glGenVertexArrays(1, &mesh.vao);
+    glGenBuffers(1, &mesh.vbo);
+    glGenBuffers(1, &mesh.ebo);
+
+    glBindVertexArray(mesh.vao);
+
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
+
+    // Позиция (location 0)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+
+    // Нормаль (location 1)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+
+    glBindVertexArray(0);
+
+    uint32_t meshId = m_nextMeshId++;
+    m_meshes.push_back(mesh);
+    return meshId;
+#else
+    (void)vertices;
+    (void)indices;
+    return 0;
+#endif
+}
+
+void OpenGLRenderer::destroyMesh(uint32_t meshId)
+{
+#ifdef USE_OPENGL
+    if (meshId == 0 || meshId > m_meshes.size()) {
+        return;
+    }
+
+    Mesh& mesh = m_meshes[meshId - 1];
+    if (mesh.vao != 0) {
+        glDeleteVertexArrays(1, &mesh.vao);
+    }
+    if (mesh.vbo != 0) {
+        glDeleteBuffers(1, &mesh.vbo);
+    }
+    if (mesh.ebo != 0) {
+        glDeleteBuffers(1, &mesh.ebo);
+    }
+    mesh = Mesh{};
+#else
+    (void)meshId;
+#endif
+}
+
+uint32_t OpenGLRenderer::createTexture(const uint8_t* data, uint32_t width, uint32_t height)
+{
+#ifdef USE_OPENGL
+    if (!data || width == 0 || height == 0) {
+        return 0;
+    }
+
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+#else
+    (void)data;
+    (void)width;
+    (void)height;
+    return 0;
+#endif
+}
+
+void OpenGLRenderer::destroyTexture(uint32_t textureId)
+{
+#ifdef USE_OPENGL
+    if (textureId != 0) {
+        glDeleteTextures(1, &textureId);
+    }
+#else
+    (void)textureId;
+#endif
+}
+
 void OpenGLRenderer::renderUIWindowContent(const UIWindow& window)
 {
 #ifdef USE_OPENGL
