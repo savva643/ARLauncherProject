@@ -1,5 +1,4 @@
 #include "Renderer.h"
-#include "third_party/simple_nvg.h"
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -10,6 +9,199 @@
 #include <GL/gl.h>
 #include <fstream>
 #include <sstream>
+#include <string>
+#include <vector>
+#include <cctype>
+
+// Встроенная реализация simple_nvg для избежания проблем с путями
+namespace {
+struct NVGcolor {
+    float r, g, b, a;
+};
+
+inline NVGcolor nvgRGBAf(float r, float g, float b, float a) {
+    return {r, g, b, a};
+}
+
+inline NVGcolor nvgRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a) {
+    return {r / 255.0f, g / 255.0f, b / 255.0f, a / 255.0f};
+}
+
+enum {
+    NVG_ALIGN_LEFT = 1 << 0,
+    NVG_ALIGN_CENTER = 1 << 1,
+    NVG_ALIGN_RIGHT = 1 << 2,
+    NVG_ALIGN_TOP = 1 << 3,
+    NVG_ALIGN_MIDDLE = 1 << 4,
+    NVG_ALIGN_BOTTOM = 1 << 5
+};
+
+struct _NVGPath {
+    float x{0.0f}, y{0.0f}, w{0.0f}, h{0.0f}, radius{0.0f};
+    bool valid{false};
+};
+
+struct NVGcontext {
+    NVGcolor fillColor{nvgRGBAf(1.0f, 1.0f, 1.0f, 1.0f)};
+    float fontSize{18.0f};
+    int textAlign{NVG_ALIGN_LEFT | NVG_ALIGN_TOP};
+    _NVGPath path{};
+    int frameWidth{0}, frameHeight{0};
+    float pixelRatio{1.0f};
+};
+
+inline NVGcontext* nvgCreateSimple() { return new NVGcontext(); }
+inline void nvgDeleteSimple(NVGcontext* ctx) { delete ctx; }
+
+inline void nvgBeginFrame(NVGcontext* ctx, int width, int height, float) {
+    if (!ctx) return;
+    ctx->frameWidth = width;
+    ctx->frameHeight = height;
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0.0, static_cast<double>(width), static_cast<double>(height), 0.0, -1.0, 1.0);
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+}
+
+inline void nvgEndFrame(NVGcontext*) {
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glDisable(GL_BLEND);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+}
+
+inline void nvgBeginPath(NVGcontext* ctx) {
+    if (ctx) ctx->path = _NVGPath{};
+}
+
+inline void nvgRoundedRect(NVGcontext* ctx, float x, float y, float w, float h, float) {
+    if (!ctx) return;
+    ctx->path = {x, y, w, h, 0.0f, true};
+}
+
+inline void nvgFillColor(NVGcontext* ctx, NVGcolor color) {
+    if (ctx) ctx->fillColor = color;
+}
+
+inline void nvgFontSize(NVGcontext* ctx, float size) {
+    if (ctx) ctx->fontSize = size;
+}
+
+inline void nvgTextAlign(NVGcontext* ctx, int align) {
+    if (ctx) ctx->textAlign = align;
+}
+
+inline void _drawFilledRect(float x, float y, float w, float h, const NVGcolor& color) {
+    glColor4f(color.r, color.g, color.b, color.a);
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex2f(x, y);
+    glVertex2f(x + w, y);
+    glVertex2f(x + w, y + h);
+    glVertex2f(x, y + h);
+    glEnd();
+}
+
+inline void nvgFill(NVGcontext* ctx) {
+    if (!ctx || !ctx->path.valid) return;
+    _drawFilledRect(ctx->path.x, ctx->path.y, ctx->path.w, ctx->path.h, ctx->fillColor);
+    ctx->path.valid = false;
+}
+
+struct SimpleGlyph {
+    char character;
+    const char* rows[7];
+};
+
+inline const SimpleGlyph* _findGlyph(char c) {
+    static const SimpleGlyph glyphs[] = {
+        {'A', {"  #  "," # # ","#   #","#####","#   #","#   #","#   #"}},
+        {'B', {"#### ","#   #","#   #","#### ","#   #","#   #","#### "}},
+        {'C', {" ### ","#   #","#    ","#    ","#    ","#   #"," ### "}},
+        {'D', {"#### ","#   #","#   #","#   #","#   #","#   #","#### "}},
+        {'E', {"#####","#    ","#    ","#####","#    ","#    ","#####"}},
+        {'G', {" ### ","#   #","#    ","# ###","#   #","#   #"," ### "}},
+        {'H', {"#   #","#   #","#   #","#####","#   #","#   #","#   #"}},
+        {'L', {"#    ","#    ","#    ","#    ","#    ","#    ","#####"}},
+        {'M', {"#   #","## ##","# # #","#   #","#   #","#   #","#   #"}},
+        {'N', {"#   #","##  #","# # #","#  ##","#   #","#   #","#   #"}},
+        {'O', {" ### ","#   #","#   #","#   #","#   #","#   #"," ### "}},
+        {'P', {"#### ","#   #","#   #","#### ","#    ","#    ","#    "}},
+        {'R', {"#### ","#   #","#   #","#### ","# #  ","#  # ","#   #"}},
+        {'S', {" ####","#    ","#    "," ### ","    #","    #","#### "}},
+        {'T', {"#####","  #  ","  #  ","  #  ","  #  ","  #  ","  #  "}},
+        {'U', {"#   #","#   #","#   #","#   #","#   #","#   #"," ### "}},
+        {'V', {"#   #","#   #","#   #","#   #","#   #"," # # ","  #  "}},
+        {'W', {"#   #","#   #","#   #","# # #","# # #","## ##","#   #"}},
+        {'Y', {"#   #","#   #"," # # ","  #  ","  #  ","  #  ","  #  "}},
+        {'Z', {"#####","    #","   # ","  #  "," #   ","#    ","#####"}},
+        {'0', {" ### ","#   #","#  ##","# # #","##  #","#   #"," ### "}},
+        {'1', {"  #  "," ##  ","  #  ","  #  ","  #  ","  #  "," ### "}},
+        {'2', {" ### ","#   #","    #","   # ","  #  "," #   ","#####"}},
+        {'3', {" ### ","#   #","    #"," ### ","    #","#   #"," ### "}},
+        {'4', {"   # ","  ## "," # # ","#  # ","#####","   # ","   # "}},
+        {'5', {"#####","#    ","#    ","#### ","    #","#   #"," ### "}},
+        {'6', {" ### ","#   #","#    ","#### ","#   #","#   #"," ### "}},
+        {'7', {"#####","    #","   # ","  #  ","  #  ","  #  ","  #  "}},
+        {'8', {" ### ","#   #","#   #"," ### ","#   #","#   #"," ### "}},
+        {'9', {" ### ","#   #","#   #"," ####","    #","#   #"," ### "}},
+        {' ', {"     ","     ","     ","     ","     ","     ","     "}},
+        {'-', {"     ","     ","     ","#####","     ","     ","     "}},
+        {':', {"     ","  #  ","     ","     ","     ","  #  ","     "}}
+    };
+    for (const auto& glyph : glyphs) {
+        if (glyph.character == c) return &glyph;
+    }
+    return nullptr;
+}
+
+inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const char* end) {
+    if (!ctx || !string) return;
+    std::string text(end ? std::string(string, end) : std::string(string));
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    const float cellWidth = ctx->fontSize * 0.6f;
+    const float cellHeight = ctx->fontSize;
+    const float spacing = ctx->fontSize * 0.15f;
+    float totalWidth = 0.0f;
+    for (char ch : text) totalWidth += cellWidth + spacing;
+    float startX = x;
+    float startY = y;
+    if (ctx->textAlign & NVG_ALIGN_CENTER) startX -= totalWidth * 0.5f;
+    else if (ctx->textAlign & NVG_ALIGN_RIGHT) startX -= totalWidth;
+    if (ctx->textAlign & NVG_ALIGN_MIDDLE) startY -= cellHeight * 0.5f;
+    else if (ctx->textAlign & NVG_ALIGN_BOTTOM) startY -= cellHeight;
+    glColor4f(ctx->fillColor.r, ctx->fillColor.g, ctx->fillColor.b, ctx->fillColor.a);
+    float penX = startX;
+    for (char ch : text) {
+        if (ch == ' ') { penX += cellWidth + spacing; continue; }
+        const SimpleGlyph* glyph = _findGlyph(ch);
+        if (!glyph) { penX += cellWidth + spacing; continue; }
+        const float blockSizeX = cellWidth / 5.0f;
+        const float blockSizeY = cellHeight / 7.0f;
+        for (int row = 0; row < 7; ++row) {
+            for (int col = 0; col < 5; ++col) {
+                if (glyph->rows[row][col] == '#') {
+                    float rx = penX + col * blockSizeX;
+                    float ry = startY + row * blockSizeY;
+                    _drawFilledRect(rx, ry, blockSizeX * 0.9f, blockSizeY * 0.9f, ctx->fillColor);
+                }
+            }
+        }
+        penX += cellWidth + spacing;
+    }
+}
+} // namespace
 #endif
 #ifdef USE_VULKAN
 #define VK_USE_PLATFORM_XLIB_KHR
@@ -115,7 +307,7 @@ bool OpenGLRenderer::initialize(GLFWwindow* window)
     createUIQuad();
 
     if (!m_simpleNVG) {
-        m_simpleNVG = nvgCreateSimple();
+        m_simpleNVG = reinterpret_cast<void*>(nvgCreateSimple());
     }
 
     return true;
@@ -187,7 +379,7 @@ void OpenGLRenderer::shutdown()
     }
 
     if (m_simpleNVG) {
-        nvgDeleteSimple(m_simpleNVG);
+        nvgDeleteSimple(reinterpret_cast<NVGcontext*>(m_simpleNVG));
         m_simpleNVG = nullptr;
     }
 #endif
@@ -433,34 +625,36 @@ uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (!m_simpleNVG) {
-        m_simpleNVG = nvgCreateSimple();
+        m_simpleNVG = reinterpret_cast<void*>(nvgCreateSimple());
     }
+    
+    NVGcontext* nvg = reinterpret_cast<NVGcontext*>(m_simpleNVG);
 
-    nvgBeginFrame(m_simpleNVG, pixelWidth, pixelHeight, 1.0f);
+    nvgBeginFrame(nvg, pixelWidth, pixelHeight, 1.0f);
 
     // Background panel
-    nvgBeginPath(m_simpleNVG);
-    nvgRoundedRect(m_simpleNVG, 0.0f, 0.0f, static_cast<float>(pixelWidth), static_cast<float>(pixelHeight), 20.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(0.15f, 0.18f, 0.22f, 0.65f));
-    nvgFill(m_simpleNVG);
+    nvgBeginPath(nvg);
+    nvgRoundedRect(nvg, 0.0f, 0.0f, static_cast<float>(pixelWidth), static_cast<float>(pixelHeight), 20.0f);
+    nvgFillColor(nvg, nvgRGBAf(0.15f, 0.18f, 0.22f, 0.65f));
+    nvgFill(nvg);
 
     // Header accent
-    nvgBeginPath(m_simpleNVG);
-    nvgRoundedRect(m_simpleNVG, 20.0f, 20.0f, static_cast<float>(pixelWidth - 40), 60.0f, 12.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
-    nvgFill(m_simpleNVG);
+    nvgBeginPath(nvg);
+    nvgRoundedRect(nvg, 20.0f, 20.0f, static_cast<float>(pixelWidth - 40), 60.0f, 12.0f);
+    nvgFillColor(nvg, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
+    nvgFill(nvg);
 
     // Title
-    nvgFontSize(m_simpleNVG, 42.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
-    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgText(m_simpleNVG, 40.0f, 40.0f, title.c_str(), nullptr);
+    nvgFontSize(nvg, 42.0f);
+    nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+    nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(nvg, 40.0f, 40.0f, title.c_str(), nullptr);
 
     // Subtitle
-    nvgFontSize(m_simpleNVG, 26.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
-    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgText(m_simpleNVG, 40.0f, 100.0f, subtitle.c_str(), nullptr);
+    nvgFontSize(nvg, 26.0f);
+    nvgFillColor(nvg, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
+    nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(nvg, 40.0f, 100.0f, subtitle.c_str(), nullptr);
 
     if (hasButton) {
         float buttonWidth = static_cast<float>(pixelWidth) - 80.0f;
@@ -468,18 +662,18 @@ uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
         float buttonX = 40.0f;
         float buttonY = static_cast<float>(pixelHeight) - buttonHeight - 40.0f;
 
-        nvgBeginPath(m_simpleNVG);
-        nvgRoundedRect(m_simpleNVG, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
-        nvgFillColor(m_simpleNVG, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
-        nvgFill(m_simpleNVG);
+        nvgBeginPath(nvg);
+        nvgRoundedRect(nvg, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
+        nvgFillColor(nvg, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
+        nvgFill(nvg);
 
-        nvgFontSize(m_simpleNVG, 30.0f);
-        nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
-        nvgTextAlign(m_simpleNVG, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgText(m_simpleNVG, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, buttonText.c_str(), nullptr);
+        nvgFontSize(nvg, 30.0f);
+        nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgText(nvg, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, buttonText.c_str(), nullptr);
     }
 
-    nvgEndFrame(m_simpleNVG);
+    nvgEndFrame(nvg);
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, m_width, m_height);
@@ -515,34 +709,35 @@ uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
 void OpenGLRenderer::renderUIWindowContent(const UIWindow& window)
 {
 #ifdef USE_OPENGL
-    if (!m_simpleNVG || window.fbo == 0) return;
+    NVGcontext* nvg = reinterpret_cast<NVGcontext*>(m_simpleNVG);
+    if (!nvg || window.fbo == 0) return;
 
     glBindFramebuffer(GL_FRAMEBUFFER, window.fbo);
     glViewport(0, 0, window.pixelWidth, window.pixelHeight);
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    nvgBeginFrame(m_simpleNVG, window.pixelWidth, window.pixelHeight, 1.0f);
+    nvgBeginFrame(nvg, window.pixelWidth, window.pixelHeight, 1.0f);
 
-    nvgBeginPath(m_simpleNVG);
-    nvgRoundedRect(m_simpleNVG, 0.0f, 0.0f, static_cast<float>(window.pixelWidth), static_cast<float>(window.pixelHeight), 20.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(0.15f, 0.18f, 0.22f, 0.65f));
-    nvgFill(m_simpleNVG);
+    nvgBeginPath(nvg);
+    nvgRoundedRect(nvg, 0.0f, 0.0f, static_cast<float>(window.pixelWidth), static_cast<float>(window.pixelHeight), 20.0f);
+    nvgFillColor(nvg, nvgRGBAf(0.15f, 0.18f, 0.22f, 0.65f));
+    nvgFill(nvg);
 
-    nvgBeginPath(m_simpleNVG);
-    nvgRoundedRect(m_simpleNVG, 20.0f, 20.0f, static_cast<float>(window.pixelWidth - 40), 60.0f, 12.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
-    nvgFill(m_simpleNVG);
+    nvgBeginPath(nvg);
+    nvgRoundedRect(nvg, 20.0f, 20.0f, static_cast<float>(window.pixelWidth - 40), 60.0f, 12.0f);
+    nvgFillColor(nvg, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
+    nvgFill(nvg);
 
-    nvgFontSize(m_simpleNVG, 42.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
-    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgText(m_simpleNVG, 40.0f, 40.0f, window.title.c_str(), nullptr);
+    nvgFontSize(nvg, 42.0f);
+    nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+    nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(nvg, 40.0f, 40.0f, window.title.c_str(), nullptr);
 
-    nvgFontSize(m_simpleNVG, 26.0f);
-    nvgFillColor(m_simpleNVG, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
-    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgText(m_simpleNVG, 40.0f, 100.0f, window.subtitle.c_str(), nullptr);
+    nvgFontSize(nvg, 26.0f);
+    nvgFillColor(nvg, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
+    nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(nvg, 40.0f, 100.0f, window.subtitle.c_str(), nullptr);
 
     if (window.hasButton) {
         float buttonWidth = static_cast<float>(window.pixelWidth) - 80.0f;
@@ -550,18 +745,18 @@ void OpenGLRenderer::renderUIWindowContent(const UIWindow& window)
         float buttonX = 40.0f;
         float buttonY = static_cast<float>(window.pixelHeight) - buttonHeight - 40.0f;
 
-        nvgBeginPath(m_simpleNVG);
-        nvgRoundedRect(m_simpleNVG, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
-        nvgFillColor(m_simpleNVG, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
-        nvgFill(m_simpleNVG);
+        nvgBeginPath(nvg);
+        nvgRoundedRect(nvg, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
+        nvgFillColor(nvg, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
+        nvgFill(nvg);
 
-        nvgFontSize(m_simpleNVG, 30.0f);
-        nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
-        nvgTextAlign(m_simpleNVG, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgText(m_simpleNVG, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, window.buttonText.c_str(), nullptr);
+        nvgFontSize(nvg, 30.0f);
+        nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgText(nvg, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, window.buttonText.c_str(), nullptr);
     }
 
-    nvgEndFrame(m_simpleNVG);
+    nvgEndFrame(nvg);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, m_width, m_height);
 #endif

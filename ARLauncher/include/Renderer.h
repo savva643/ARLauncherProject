@@ -210,12 +210,6 @@ public:
                             const std::string& buttonText = "");
 
 private:
-    uint32_t loadShader(const char* vertexPath, const char* fragmentPath);
-    uint32_t compileShader(const char* source, uint32_t type);
-    std::string readShaderFile(const char* filepath);
-    void createFullscreenQuad();
-    void createUIQuad();
-    
     struct UIWindow {
         uint32_t id;
         uint32_t fbo;
@@ -232,6 +226,11 @@ private:
         int pixelHeight;
     };
     
+    uint32_t loadShader(const char* vertexPath, const char* fragmentPath);
+    uint32_t compileShader(const char* source, uint32_t type);
+    std::string readShaderFile(const char* filepath);
+    void createFullscreenQuad();
+    void createUIQuad();
     void renderUIWindowContent(const UIWindow& window);
 
     uint32_t m_videoTexture;
@@ -265,7 +264,7 @@ private:
     std::vector<UIWindow> m_uiWindows;
     uint32_t m_nextUIWindowId;
 
-    struct NVGcontext* m_simpleNVG;
+    void* m_simpleNVG; // NVGcontext* (определен в Renderer.cpp)
 };
 
 // Factory function
