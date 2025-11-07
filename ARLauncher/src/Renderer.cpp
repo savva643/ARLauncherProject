@@ -344,7 +344,7 @@ inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const
     }
 }
 } // namespace
-#endif
+
 #ifdef USE_VULKAN
 #define VK_USE_PLATFORM_XLIB_KHR
 #include <vulkan/vulkan.h>
