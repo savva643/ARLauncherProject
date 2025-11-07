@@ -37,10 +37,11 @@ public:
     bool initialize();
     void shutdown();
     
-    // Объекты
+    // Создание объектов
     uint32_t addObject(const SceneObject& object);
     void removeObject(uint32_t objectId);
     SceneObject* getObject(uint32_t objectId);
+    uint32_t addCube(Renderer* renderer, const glm::vec3& position, const glm::vec3& scale);
     
     // Камера
     Camera* getCamera() const { return m_camera.get(); }

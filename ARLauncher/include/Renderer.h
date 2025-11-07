@@ -6,6 +6,7 @@
 #include <memory>
 #include <vector>
 #include <cstdint>
+#include <string>
 
 // Forward declarations
 struct GLFWwindow;
@@ -45,6 +46,8 @@ public:
     
     virtual uint32_t createTexture(const uint8_t* data, uint32_t width, uint32_t height) = 0;
     virtual void destroyTexture(uint32_t textureId) = 0;
+
+    virtual void renderUIWindows() {}
     
     // Получение размеров окна
     void getWindowSize(int& width, int& height) const;
@@ -197,13 +200,41 @@ public:
     void setVideoOpacity(float opacity) override;
     void set3DObjectsOpacity(float opacity) override;
 
+    void renderUIWindows() override;
+
+    uint32_t createUIWindow(const std::string& title,
+                            const std::string& subtitle,
+                            const glm::vec3& position,
+                            const glm::vec2& size,
+                            bool hasButton = false,
+                            const std::string& buttonText = "");
+
 private:
+    uint32_t loadShader(const char* vertexPath, const char* fragmentPath);
+    uint32_t compileShader(const char* source, uint32_t type);
+    std::string readShaderFile(const char* filepath);
+    void createFullscreenQuad();
+    void createUIQuad();
+    void renderUIWindowContent(const UIWindow& window);
+
     uint32_t m_videoTexture;
     glm::mat4 m_viewMatrix;
     glm::mat4 m_projectionMatrix;
     float m_videoOpacity;
     float m_3dObjectsOpacity;
-    
+
+    uint32_t m_basicShaderProgram;
+    uint32_t m_videoShaderProgram;
+    uint32_t m_glassmorphismShaderProgram;
+    uint32_t m_uiShaderProgram;
+
+    uint32_t m_fullscreenQuadVAO;
+    uint32_t m_fullscreenQuadVBO;
+
+    uint32_t m_uiQuadVAO;
+    uint32_t m_uiQuadVBO;
+    uint32_t m_uiQuadEBO;
+
     struct Mesh {
         uint32_t vao;
         uint32_t vbo;
@@ -211,8 +242,29 @@ private:
         size_t indexCount;
     };
     
+    struct UIWindow {
+        uint32_t id;
+        uint32_t fbo;
+        uint32_t texture;
+        uint32_t rbo;
+        glm::vec3 position;
+        glm::vec2 size;
+        bool billboard;
+        std::string title;
+        std::string subtitle;
+        bool hasButton;
+        std::string buttonText;
+        int pixelWidth;
+        int pixelHeight;
+    };
+
     std::vector<Mesh> m_meshes;
     uint32_t m_nextMeshId;
+
+    std::vector<UIWindow> m_uiWindows;
+    uint32_t m_nextUIWindowId;
+
+    struct NVGcontext* m_simpleNVG;
 };
 
 // Factory function

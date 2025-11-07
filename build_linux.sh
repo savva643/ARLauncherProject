@@ -92,7 +92,7 @@ echo ""
 
 # 3. Сборка ARLauncher (CMake) с Vulkan
 echo "========================================"
-echo "Step 3: Building ARLauncher (Vulkan)"
+echo "Step 3: Building ARLauncher (OpenGL)"
 echo "========================================"
 cd ../../ARLauncher
 
@@ -115,10 +115,10 @@ if [ ! -f "$SENSOR_CONNECTOR_LIB" ]; then
     exit 1
 fi
 
-# Конфигурация CMake с Vulkan и SensorConnector
+# Конфигурация CMake с OpenGL и SensorConnector
 echo "📦 Configuring CMake..."
 cmake .. \
-    -DUSE_VULKAN=ON \
+    -DUSE_OPENGL=ON \
     -DUSE_SENSOR_CONNECTOR=ON \
     -DSENSOR_CONNECTOR_LIB="$SENSOR_CONNECTOR_LIB" \
     -DLENS_ENGINE_SDK_DIR="$LENS_ENGINE_SDK_DIR"

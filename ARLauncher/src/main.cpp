@@ -9,7 +9,7 @@ int main(int argc, char* argv[]) {
         return -1;
     }
     
-    std::cout << "🚀 ARLauncher started" << std::endl;
+    std::cout << "[RUN] ARLauncher started" << std::endl;
     std::cout << "📡 Waiting for sensor data..." << std::endl;
     
     app.run();

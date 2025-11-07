@@ -7,6 +7,44 @@
 #include <cmath>
 #include <iostream>
 
+namespace {
+const std::vector<float> kCubeVertices = {
+    -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
+     0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
+     0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
+    -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
+     0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
+     0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
+    -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+    -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+    -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+    -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+     0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
+     0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
+     0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
+     0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
+    -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
+    -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
+     0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
+     0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
+    -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
+     0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
+     0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
+    -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
+};
+
+const std::vector<uint32_t> kCubeIndices = {
+    0, 1, 2,  2, 3, 0,
+    4, 5, 6,  6, 7, 4,
+    8, 9, 10, 10, 11, 8,
+    12, 13, 14, 14, 15, 12,
+    16, 17, 18, 18, 19, 16,
+    20, 21, 22, 22, 23, 20
+};
+}
+
 Scene::Scene()
     : m_nextObjectId(1)
     , m_cubeMeshId(0)
@@ -125,51 +163,9 @@ void Scene::createDemoScene(Renderer* renderer)
         return;
     }
     
-    // Создание меша куба
-    std::vector<float> cubeVertices = {
-        // Позиции (x,y,z) + Нормали (x,y,z) + UV (u,v)
-        // Передняя грань
-        -0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 0.0f,
-         0.5f, -0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 0.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  1.0f, 1.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  0.0f,  1.0f,  0.0f, 1.0f,
-        // Задняя грань
-        -0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 0.0f,
-         0.5f, -0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 0.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  0.0f, 1.0f,
-        -0.5f,  0.5f, -0.5f,  0.0f,  0.0f, -1.0f,  1.0f, 1.0f,
-        // Левая грань
-        -0.5f, -0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f, -1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
-        -0.5f,  0.5f, -0.5f, -1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
-        // Правая грань
-         0.5f, -0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 0.0f,
-         0.5f,  0.5f, -0.5f,  1.0f,  0.0f,  0.0f,  1.0f, 1.0f,
-         0.5f,  0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 1.0f,
-         0.5f, -0.5f,  0.5f,  1.0f,  0.0f,  0.0f,  0.0f, 0.0f,
-        // Верхняя грань
-        -0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 0.0f,
-        -0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  0.0f, 1.0f,
-         0.5f,  0.5f,  0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 1.0f,
-         0.5f,  0.5f, -0.5f,  0.0f,  1.0f,  0.0f,  1.0f, 0.0f,
-        // Нижняя грань
-        -0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 1.0f,
-         0.5f, -0.5f, -0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 1.0f,
-         0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  1.0f, 0.0f,
-        -0.5f, -0.5f,  0.5f,  0.0f, -1.0f,  0.0f,  0.0f, 0.0f,
-    };
-    
-    std::vector<uint32_t> cubeIndices = {
-        0, 1, 2,  2, 3, 0,  // Передняя
-        4, 5, 6,  6, 7, 4,  // Задняя
-        8, 9, 10, 10, 11, 8, // Левая
-        12, 13, 14, 14, 15, 12, // Правая
-        16, 17, 18, 18, 19, 16, // Верхняя
-        20, 21, 22, 22, 23, 20  // Нижняя
-    };
-    
-    m_cubeMeshId = renderer->createMesh(cubeVertices, cubeIndices);
+    if (m_cubeMeshId == 0) {
+        m_cubeMeshId = renderer->createMesh(kCubeVertices, kCubeIndices);
+    }
     
     // Создание демо-кубов
     SceneObject cube1;
@@ -180,7 +176,6 @@ void Scene::createDemoScene(Renderer* renderer)
     cube1.meshId = m_cubeMeshId;
     addObject(cube1);
     
-    // Второй куб слева
     SceneObject cube2;
     cube2.position = glm::vec3(-0.5f, 0.0f, -1.0f);
     cube2.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -189,7 +184,6 @@ void Scene::createDemoScene(Renderer* renderer)
     cube2.meshId = m_cubeMeshId;
     addObject(cube2);
     
-    // Третий куб справа
     SceneObject cube3;
     cube3.position = glm::vec3(0.5f, 0.0f, -1.0f);
     cube3.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -254,7 +248,27 @@ void Scene::createDemoScene(Renderer* renderer)
     sphere.meshId = m_sphereMeshId;
     addObject(sphere);
     
-    std::cout << "✅ Demo scene created: " << m_objects.size() << " objects" << std::endl;
+    std::cout << "[OK] Demo scene created: " << m_objects.size() << " objects" << std::endl;
+}
+
+uint32_t Scene::addCube(Renderer* renderer, const glm::vec3& position, const glm::vec3& scale)
+{
+    if (!renderer) {
+        std::cerr << "Scene::addCube: renderer is null" << std::endl;
+        return 0;
+    }
+
+    if (m_cubeMeshId == 0) {
+        m_cubeMeshId = renderer->createMesh(kCubeVertices, kCubeIndices);
+    }
+
+    SceneObject cube;
+    cube.position = position;
+    cube.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cube.scale = scale;
+    cube.visible = true;
+    cube.meshId = m_cubeMeshId;
+    return addObject(cube);
 }
 
 void Scene::updateCameraFromAR(const glm::vec3& position, const glm::quat& rotation)

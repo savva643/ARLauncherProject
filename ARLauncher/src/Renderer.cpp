@@ -1,7 +1,15 @@
 #include "Renderer.h"
+#include "third_party/simple_nvg.h"
+#include <algorithm>
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/quaternion.hpp>
+
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #include <GL/gl.h>
+#include <fstream>
+#include <sstream>
 #endif
 #ifdef USE_VULKAN
 #define VK_USE_PLATFORM_XLIB_KHR
@@ -35,8 +43,23 @@ void Renderer::getWindowSize(int& width, int& height) const
 // OpenGL Renderer Implementation
 OpenGLRenderer::OpenGLRenderer()
     : m_videoTexture(0)
+    , m_videoOpacity(1.0f)
+    , m_3dObjectsOpacity(1.0f)
+    , m_basicShaderProgram(0)
+    , m_videoShaderProgram(0)
+    , m_glassmorphismShaderProgram(0)
+    , m_uiShaderProgram(0)
+    , m_fullscreenQuadVAO(0)
+    , m_fullscreenQuadVBO(0)
+    , m_uiQuadVAO(0)
+    , m_uiQuadVBO(0)
+    , m_uiQuadEBO(0)
     , m_nextMeshId(1)
+    , m_nextUIWindowId(1)
+    , m_simpleNVG(nullptr)
 {
+    m_viewMatrix = glm::mat4(1.0f);
+    m_projectionMatrix = glm::mat4(1.0f);
 }
 
 OpenGLRenderer::~OpenGLRenderer()
@@ -54,58 +77,47 @@ bool OpenGLRenderer::initialize(GLFWwindow* window)
     m_window = window;
     
 #ifdef USE_OPENGL
-    // Убеждаемся, что контекст активен
     glfwMakeContextCurrent(window);
-    
-    // Проверяем, что контекст действительно активен
     if (glfwGetCurrentContext() != window) {
         std::cerr << "OpenGLRenderer::initialize: failed to make context current" << std::endl;
         return false;
     }
     
-    // Инициализация OpenGL
     glfwGetWindowSize(window, &m_width, &m_height);
-    
-    // Очищаем возможные предыдущие ошибки
     while (glGetError() != GL_NO_ERROR) {}
-    
-    // Устанавливаем viewport
     glViewport(0, 0, m_width, m_height);
-    
-    // Проверяем наличие ошибок после viewport
     GLenum error = glGetError();
     if (error != GL_NO_ERROR) {
         std::cerr << "OpenGL error after glViewport: " << error << std::endl;
-        // Не возвращаем false, так как это может быть просто предупреждение
     }
     
-    // Настраиваем OpenGL состояние
     glEnable(GL_DEPTH_TEST);
-    error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after glEnable(GL_DEPTH_TEST): " << error << std::endl;
-    }
-    
     glEnable(GL_BLEND);
-    error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after glEnable(GL_BLEND): " << error << std::endl;
-    }
-    
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    error = glGetError();
-    if (error != GL_NO_ERROR) {
-        std::cerr << "OpenGL error after glBlendFunc: " << error << std::endl;
-    }
     
-    // Проверяем версию OpenGL (может быть NULL если функции не загружены)
     const char* version = reinterpret_cast<const char*>(glGetString(GL_VERSION));
     if (version) {
         std::cout << "OpenGL version: " << version << std::endl;
     } else {
         std::cerr << "Warning: glGetString(GL_VERSION) returned NULL - OpenGL functions may not be loaded" << std::endl;
     }
-    
+
+    m_basicShaderProgram = loadShader("shaders/basic.vert", "shaders/basic.frag");
+    m_videoShaderProgram = loadShader("shaders/video.vert", "shaders/video.frag");
+    m_glassmorphismShaderProgram = loadShader("shaders/glassmorphism.vert", "shaders/glassmorphism.frag");
+    m_uiShaderProgram = loadShader("shaders/ui.vert", "shaders/ui.frag");
+
+    if (m_basicShaderProgram == 0 || m_videoShaderProgram == 0 || m_uiShaderProgram == 0) {
+        std::cerr << "[WARN] Some shader programs failed to load. Fallback paths enabled." << std::endl;
+    }
+
+    createFullscreenQuad();
+    createUIQuad();
+
+    if (!m_simpleNVG) {
+        m_simpleNVG = nvgCreateSimple();
+    }
+
     return true;
 #else
     std::cerr << "OpenGLRenderer::initialize: USE_OPENGL not defined" << std::endl;
@@ -116,16 +128,67 @@ bool OpenGLRenderer::initialize(GLFWwindow* window)
 void OpenGLRenderer::shutdown()
 {
 #ifdef USE_OPENGL
-    // Очистка ресурсов
     for (auto& mesh : m_meshes) {
         glDeleteVertexArrays(1, &mesh.vao);
         glDeleteBuffers(1, &mesh.vbo);
         glDeleteBuffers(1, &mesh.ebo);
     }
     m_meshes.clear();
-    
-    if (m_videoTexture) {
+
+    for (auto& window : m_uiWindows) {
+        if (window.fbo != 0) {
+            glDeleteFramebuffers(1, &window.fbo);
+        }
+        if (window.texture != 0) {
+            glDeleteTextures(1, &window.texture);
+        }
+        if (window.rbo != 0) {
+            glDeleteRenderbuffers(1, &window.rbo);
+        }
+    }
+    m_uiWindows.clear();
+
+    if (m_videoTexture != 0) {
         glDeleteTextures(1, &m_videoTexture);
+        m_videoTexture = 0;
+    }
+
+    if (m_fullscreenQuadVAO != 0) {
+        glDeleteVertexArrays(1, &m_fullscreenQuadVAO);
+        glDeleteBuffers(1, &m_fullscreenQuadVBO);
+        m_fullscreenQuadVAO = 0;
+        m_fullscreenQuadVBO = 0;
+    }
+
+    if (m_uiQuadVAO != 0) {
+        glDeleteVertexArrays(1, &m_uiQuadVAO);
+        glDeleteBuffers(1, &m_uiQuadVBO);
+        glDeleteBuffers(1, &m_uiQuadEBO);
+        m_uiQuadVAO = 0;
+        m_uiQuadVBO = 0;
+        m_uiQuadEBO = 0;
+    }
+
+    if (m_basicShaderProgram != 0) {
+        glDeleteProgram(m_basicShaderProgram);
+        m_basicShaderProgram = 0;
+    }
+    if (m_videoShaderProgram != 0) {
+        glDeleteProgram(m_videoShaderProgram);
+        m_videoShaderProgram = 0;
+    }
+    if (m_glassmorphismShaderProgram != 0) {
+        glDeleteProgram(m_glassmorphismShaderProgram);
+        m_glassmorphismShaderProgram = 0;
+    }
+    if (m_uiShaderProgram != 0) {
+        glDeleteProgram(m_uiShaderProgram);
+        m_uiShaderProgram = 0;
+    }
+
+    if (m_simpleNVG) {
+        nvgDeleteSimple(m_simpleNVG);
+        m_simpleNVG = nullptr;
     }
 #endif
 }
@@ -143,67 +206,67 @@ void OpenGLRenderer::endFrame()
     // OpenGL автоматически обновляет буфер через glfwSwapBuffers
 }
 
-void OpenGLRenderer::setVideoOpacity(float opacity)
-{
-    m_videoOpacity = opacity;
-}
-
-void OpenGLRenderer::set3DObjectsOpacity(float opacity)
-{
-    m_3dObjectsOpacity = opacity;
-}
-
 void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height)
 {
 #ifdef USE_OPENGL
     if (!data || width == 0 || height == 0) {
         return;
     }
-    
-    // Обновляем или создаем текстуру для видео
+
     if (m_videoTexture == 0) {
         glGenTextures(1, &m_videoTexture);
+        glBindTexture(GL_TEXTURE_2D, m_videoTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     }
-    
+
     glBindTexture(GL_TEXTURE_2D, m_videoTexture);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    
-    // Рендерим полноэкранный квад с учетом opacity
+
     glDisable(GL_DEPTH_TEST);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glUseProgram(0); // Используем fixed-function pipeline для простоты
-    
-    glMatrixMode(GL_PROJECTION);
-    glPushMatrix();
-    glLoadIdentity();
-    glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
-    
-    glMatrixMode(GL_MODELVIEW);
-    glPushMatrix();
-    glLoadIdentity();
-    
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, m_videoTexture);
-    glColor4f(1.0f, 1.0f, 1.0f, m_videoOpacity); // Применяем opacity
-    
-    glBegin(GL_QUADS);
-    glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 0.0f);
-    glTexCoord2f(1.0f, 1.0f); glVertex2f(1.0f, 0.0f);
-    glTexCoord2f(1.0f, 0.0f); glVertex2f(1.0f, 1.0f);
-    glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 1.0f);
-    glEnd();
-    
-    glColor4f(1.0f, 1.0f, 1.0f, 1.0f); // Сбрасываем цвет
-    glDisable(GL_TEXTURE_2D);
-    
-    glPopMatrix();
-    glMatrixMode(GL_PROJECTION);
-    glPopMatrix();
-    glMatrixMode(GL_MODELVIEW);
-    
+
+    if (m_videoShaderProgram != 0 && m_fullscreenQuadVAO != 0) {
+        glUseProgram(m_videoShaderProgram);
+        GLint opacityLoc = glGetUniformLocation(m_videoShaderProgram, "opacity");
+        GLint texLoc = glGetUniformLocation(m_videoShaderProgram, "videoTexture");
+        if (opacityLoc >= 0) glUniform1f(opacityLoc, m_videoOpacity);
+        if (texLoc >= 0) glUniform1i(texLoc, 0);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, m_videoTexture);
+
+        glBindVertexArray(m_fullscreenQuadVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+
+        glUseProgram(0);
+    } else {
+        glUseProgram(0);
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glOrtho(0.0, 1.0, 0.0, 1.0, -1.0, 1.0);
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, m_videoTexture);
+        glColor4f(1.0f, 1.0f, 1.0f, m_videoOpacity);
+        glBegin(GL_QUADS);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 0.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(1.0f, 0.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(1.0f, 1.0f);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 1.0f);
+        glEnd();
+        glDisable(GL_TEXTURE_2D);
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+    }
+
     glEnable(GL_DEPTH_TEST);
 #endif
 }
@@ -215,33 +278,56 @@ void OpenGLRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
     if (transforms.size() != meshIds.size() || transforms.empty()) {
         return;
     }
-    
-    // Устанавливаем матрицы камеры
-    glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf(glm::value_ptr(m_projectionMatrix));
-    
-    glMatrixMode(GL_MODELVIEW);
-    glLoadMatrixf(glm::value_ptr(m_viewMatrix));
-    
-    // Рендерим каждый объект
-    for (size_t i = 0; i < transforms.size(); ++i) {
-        uint32_t meshId = meshIds[i];
-        if (meshId == 0 || meshId > m_meshes.size()) {
-            continue;
+
+    if (m_basicShaderProgram != 0) {
+        glUseProgram(m_basicShaderProgram);
+        GLint modelLoc = glGetUniformLocation(m_basicShaderProgram, "model");
+        GLint viewLoc = glGetUniformLocation(m_basicShaderProgram, "view");
+        GLint projLoc = glGetUniformLocation(m_basicShaderProgram, "projection");
+        GLint colorLoc = glGetUniformLocation(m_basicShaderProgram, "objectColor");
+        GLint opacityLoc = glGetUniformLocation(m_basicShaderProgram, "opacity");
+        GLint lightingLoc = glGetUniformLocation(m_basicShaderProgram, "useLighting");
+
+        if (viewLoc >= 0) glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(m_viewMatrix));
+        if (projLoc >= 0) glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(m_projectionMatrix));
+        if (colorLoc >= 0) glUniform3f(colorLoc, 1.0f, 1.0f, 1.0f);
+        if (opacityLoc >= 0) glUniform1f(opacityLoc, m_3dObjectsOpacity);
+        if (lightingLoc >= 0) glUniform1i(lightingLoc, 1);
+
+        for (size_t i = 0; i < transforms.size(); ++i) {
+            uint32_t meshId = meshIds[i];
+            if (meshId == 0 || meshId > m_meshes.size()) {
+                continue;
+            }
+            const Mesh& mesh = m_meshes[meshId - 1];
+            if (mesh.vao == 0) continue;
+
+            if (modelLoc >= 0) glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(transforms[i]));
+            glBindVertexArray(mesh.vao);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount), GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(0);
         }
-        
-        const Mesh& mesh = m_meshes[meshId - 1];
-        
-        // Применяем трансформацию объекта
-        glPushMatrix();
-        glMultMatrixf(glm::value_ptr(transforms[i]));
-        
-        // Рендерим меш
-        glBindVertexArray(mesh.vao);
-        glDrawElements(GL_TRIANGLES, mesh.indexCount, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-        
-        glPopMatrix();
+
+        glUseProgram(0);
+    } else {
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(glm::value_ptr(m_projectionMatrix));
+        glMatrixMode(GL_MODELVIEW);
+        glLoadMatrixf(glm::value_ptr(m_viewMatrix));
+        for (size_t i = 0; i < transforms.size(); ++i) {
+            uint32_t meshId = meshIds[i];
+            if (meshId == 0 || meshId > m_meshes.size()) {
+                continue;
+            }
+            const Mesh& mesh = m_meshes[meshId - 1];
+            if (mesh.vao == 0) continue;
+            glPushMatrix();
+            glMultMatrixf(glm::value_ptr(transforms[i]));
+            glBindVertexArray(mesh.vao);
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(mesh.indexCount), GL_UNSIGNED_INT, nullptr);
+            glBindVertexArray(0);
+            glPopMatrix();
+        }
     }
 #endif
 }
@@ -252,85 +338,408 @@ void OpenGLRenderer::setCameraMatrix(const glm::mat4& view, const glm::mat4& pro
     m_projectionMatrix = projection;
 }
 
-uint32_t OpenGLRenderer::createMesh(const std::vector<float>& vertices, 
-                                    const std::vector<uint32_t>& indices)
+void OpenGLRenderer::renderUIWindows()
 {
 #ifdef USE_OPENGL
-    Mesh mesh;
-    glGenVertexArrays(1, &mesh.vao);
-    glGenBuffers(1, &mesh.vbo);
-    glGenBuffers(1, &mesh.ebo);
-    
-    glBindVertexArray(mesh.vao);
-    
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(float), vertices.data(), GL_STATIC_DRAW);
-    
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
-    
-    // Vertex attributes
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
-    glEnableVertexAttribArray(1);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(6 * sizeof(float)));
-    glEnableVertexAttribArray(2);
-    
-    glBindVertexArray(0);
-    
-    mesh.indexCount = indices.size();
-    m_meshes.push_back(mesh);
-    
-    return m_nextMeshId++;
-#else
-    return 0;
-#endif
-}
-
-void OpenGLRenderer::destroyMesh(uint32_t meshId)
-{
-#ifdef USE_OPENGL
-    if (meshId == 0 || meshId > m_meshes.size()) {
+    if (m_uiWindows.empty()) {
         return;
     }
-    
-    Mesh& mesh = m_meshes[meshId - 1];
-    glDeleteVertexArrays(1, &mesh.vao);
-    glDeleteBuffers(1, &mesh.vbo);
-    glDeleteBuffers(1, &mesh.ebo);
-    
-    // Помечаем как пустой
-    mesh.vao = 0;
-    mesh.vbo = 0;
-    mesh.ebo = 0;
-    mesh.indexCount = 0;
+
+    if (m_uiShaderProgram == 0 || m_uiQuadVAO == 0) {
+        return;
+    }
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    glUseProgram(m_uiShaderProgram);
+    GLint modelLoc = glGetUniformLocation(m_uiShaderProgram, "model");
+    GLint viewLoc = glGetUniformLocation(m_uiShaderProgram, "view");
+    GLint projLoc = glGetUniformLocation(m_uiShaderProgram, "projection");
+    GLint opacityLoc = glGetUniformLocation(m_uiShaderProgram, "opacity");
+    GLint texLoc = glGetUniformLocation(m_uiShaderProgram, "uiTexture");
+
+    if (viewLoc >= 0) glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(m_viewMatrix));
+    if (projLoc >= 0) glUniformMatrix4fv(projLoc, 1, GL_FALSE, glm::value_ptr(m_projectionMatrix));
+    if (texLoc >= 0) glUniform1i(texLoc, 0);
+
+    glm::mat4 viewInverse = glm::inverse(m_viewMatrix);
+
+    for (const auto& window : m_uiWindows) {
+        if (window.texture == 0) continue;
+        renderUIWindowContent(window);
+
+        glm::mat4 rotation = glm::mat4(1.0f);
+        if (window.billboard) {
+            rotation = glm::mat4(glm::mat3(viewInverse));
+        }
+
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), window.position) * rotation;
+        model = glm::scale(model, glm::vec3(window.size.x, window.size.y, 1.0f));
+
+        if (modelLoc >= 0) glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+        if (opacityLoc >= 0) glUniform1f(opacityLoc, 1.0f);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, window.texture);
+
+        glBindVertexArray(m_uiQuadVAO);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
+        glBindVertexArray(0);
+    }
+
+    glUseProgram(0);
+    glDisable(GL_BLEND);
 #endif
 }
 
-uint32_t OpenGLRenderer::createTexture(const uint8_t* data, uint32_t width, uint32_t height)
+uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
+                                        const std::string& subtitle,
+                                        const glm::vec3& position,
+                                        const glm::vec2& size,
+                                        bool hasButton,
+                                        const std::string& buttonText)
 {
 #ifdef USE_OPENGL
-    uint32_t texture;
+    const int baseResolution = 512;
+    int pixelWidth = static_cast<int>(std::max(256.0f, size.x * baseResolution));
+    int pixelHeight = static_cast<int>(std::max(256.0f, size.y * baseResolution));
+
+    GLuint fbo = 0;
+    GLuint texture = 0;
+    GLuint rbo = 0;
+
+    glGenFramebuffers(1, &fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, pixelWidth, pixelHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    
-    return texture;
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+
+    glGenRenderbuffers(1, &rbo);
+    glBindRenderbuffer(GL_RENDERBUFFER, rbo);
+    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH24_STENCIL8, pixelWidth, pixelHeight);
+    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, rbo);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "[ERROR] Failed to create UI framebuffer" << std::endl;
+    }
+
+    glViewport(0, 0, pixelWidth, pixelHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (!m_simpleNVG) {
+        m_simpleNVG = nvgCreateSimple();
+    }
+
+    nvgBeginFrame(m_simpleNVG, pixelWidth, pixelHeight, 1.0f);
+
+    // Background panel
+    nvgBeginPath(m_simpleNVG);
+    nvgRoundedRect(m_simpleNVG, 0.0f, 0.0f, static_cast<float>(pixelWidth), static_cast<float>(pixelHeight), 20.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(0.15f, 0.18f, 0.22f, 0.65f));
+    nvgFill(m_simpleNVG);
+
+    // Header accent
+    nvgBeginPath(m_simpleNVG);
+    nvgRoundedRect(m_simpleNVG, 20.0f, 20.0f, static_cast<float>(pixelWidth - 40), 60.0f, 12.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
+    nvgFill(m_simpleNVG);
+
+    // Title
+    nvgFontSize(m_simpleNVG, 42.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(m_simpleNVG, 40.0f, 40.0f, title.c_str(), nullptr);
+
+    // Subtitle
+    nvgFontSize(m_simpleNVG, 26.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
+    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(m_simpleNVG, 40.0f, 100.0f, subtitle.c_str(), nullptr);
+
+    if (hasButton) {
+        float buttonWidth = static_cast<float>(pixelWidth) - 80.0f;
+        float buttonHeight = 70.0f;
+        float buttonX = 40.0f;
+        float buttonY = static_cast<float>(pixelHeight) - buttonHeight - 40.0f;
+
+        nvgBeginPath(m_simpleNVG);
+        nvgRoundedRect(m_simpleNVG, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
+        nvgFillColor(m_simpleNVG, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
+        nvgFill(m_simpleNVG);
+
+        nvgFontSize(m_simpleNVG, 30.0f);
+        nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+        nvgTextAlign(m_simpleNVG, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgText(m_simpleNVG, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, buttonText.c_str(), nullptr);
+    }
+
+    nvgEndFrame(m_simpleNVG);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_width, m_height);
+
+    UIWindow window{};
+    window.id = m_nextUIWindowId++;
+    window.fbo = fbo;
+    window.texture = texture;
+    window.rbo = rbo;
+    window.position = position;
+    window.size = size;
+    window.billboard = true;
+    window.title = title;
+    window.subtitle = subtitle;
+    window.hasButton = hasButton;
+    window.buttonText = buttonText;
+    window.pixelWidth = pixelWidth;
+    window.pixelHeight = pixelHeight;
+
+    m_uiWindows.push_back(window);
+    return window.id;
 #else
+    (void)title;
+    (void)subtitle;
+    (void)position;
+    (void)size;
+    (void)hasButton;
+    (void)buttonText;
     return 0;
 #endif
 }
 
-void OpenGLRenderer::destroyTexture(uint32_t textureId)
+void OpenGLRenderer::renderUIWindowContent(const UIWindow& window)
 {
 #ifdef USE_OPENGL
-    glDeleteTextures(1, &textureId);
+    if (!m_simpleNVG || window.fbo == 0) return;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, window.fbo);
+    glViewport(0, 0, window.pixelWidth, window.pixelHeight);
+    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    nvgBeginFrame(m_simpleNVG, window.pixelWidth, window.pixelHeight, 1.0f);
+
+    nvgBeginPath(m_simpleNVG);
+    nvgRoundedRect(m_simpleNVG, 0.0f, 0.0f, static_cast<float>(window.pixelWidth), static_cast<float>(window.pixelHeight), 20.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(0.15f, 0.18f, 0.22f, 0.65f));
+    nvgFill(m_simpleNVG);
+
+    nvgBeginPath(m_simpleNVG);
+    nvgRoundedRect(m_simpleNVG, 20.0f, 20.0f, static_cast<float>(window.pixelWidth - 40), 60.0f, 12.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
+    nvgFill(m_simpleNVG);
+
+    nvgFontSize(m_simpleNVG, 42.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(m_simpleNVG, 40.0f, 40.0f, window.title.c_str(), nullptr);
+
+    nvgFontSize(m_simpleNVG, 26.0f);
+    nvgFillColor(m_simpleNVG, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
+    nvgTextAlign(m_simpleNVG, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgText(m_simpleNVG, 40.0f, 100.0f, window.subtitle.c_str(), nullptr);
+
+    if (window.hasButton) {
+        float buttonWidth = static_cast<float>(window.pixelWidth) - 80.0f;
+        float buttonHeight = 70.0f;
+        float buttonX = 40.0f;
+        float buttonY = static_cast<float>(window.pixelHeight) - buttonHeight - 40.0f;
+
+        nvgBeginPath(m_simpleNVG);
+        nvgRoundedRect(m_simpleNVG, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
+        nvgFillColor(m_simpleNVG, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
+        nvgFill(m_simpleNVG);
+
+        nvgFontSize(m_simpleNVG, 30.0f);
+        nvgFillColor(m_simpleNVG, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+        nvgTextAlign(m_simpleNVG, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+        nvgText(m_simpleNVG, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, window.buttonText.c_str(), nullptr);
+    }
+
+    nvgEndFrame(m_simpleNVG);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, m_width, m_height);
+#endif
+}
+
+uint32_t OpenGLRenderer::loadShader(const char* vertexPath, const char* fragmentPath)
+{
+#ifdef USE_OPENGL
+    std::string vertexCode = readShaderFile(vertexPath);
+    std::string fragmentCode = readShaderFile(fragmentPath);
+    if (vertexCode.empty() || fragmentCode.empty()) {
+        return 0;
+    }
+
+    uint32_t vertexShader = compileShader(vertexCode.c_str(), GL_VERTEX_SHADER);
+    uint32_t fragmentShader = compileShader(fragmentCode.c_str(), GL_FRAGMENT_SHADER);
+    if (vertexShader == 0 || fragmentShader == 0) {
+        if (vertexShader != 0) glDeleteShader(vertexShader);
+        if (fragmentShader != 0) glDeleteShader(fragmentShader);
+        return 0;
+    }
+
+    uint32_t program = glCreateProgram();
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+    glLinkProgram(program);
+
+    int success = 0;
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetProgramInfoLog(program, 512, nullptr, infoLog);
+        std::cerr << "[ERROR] Shader program linking failed: " << infoLog << std::endl;
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        glDeleteProgram(program);
+        return 0;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return program;
+#else
+    (void)vertexPath;
+    (void)fragmentPath;
+    return 0;
+#endif
+}
+
+uint32_t OpenGLRenderer::compileShader(const char* source, uint32_t type)
+{
+#ifdef USE_OPENGL
+    uint32_t shader = glCreateShader(type);
+    glShaderSource(shader, 1, &source, nullptr);
+    glCompileShader(shader);
+
+    int success = 0;
+    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char infoLog[512];
+        glGetShaderInfoLog(shader, 512, nullptr, infoLog);
+        std::cerr << "[ERROR] Shader compilation failed: " << infoLog << std::endl;
+        glDeleteShader(shader);
+        return 0;
+    }
+
+    return shader;
+#else
+    (void)source;
+    (void)type;
+    return 0;
+#endif
+}
+
+std::string OpenGLRenderer::readShaderFile(const char* filepath)
+{
+#ifdef USE_OPENGL
+    std::string content;
+    std::ifstream file(filepath, std::ios::in);
+    std::vector<std::string> fallbackPaths = {
+        filepath,
+        std::string("../") + filepath,
+        std::string("../../") + filepath,
+        std::string("../../../") + filepath,
+        std::string("shaders/") + filepath,
+        std::string("ARLauncher/shaders/") + filepath
+    };
+
+    for (const auto& path : fallbackPaths) {
+        file.open(path, std::ios::in);
+        if (file.is_open()) {
+            std::stringstream ss;
+            ss << file.rdbuf();
+            content = ss.str();
+            file.close();
+            return content;
+        }
+    }
+
+    std::cerr << "[ERROR] Unable to open shader file: " << filepath << std::endl;
+    return content;
+#else
+    (void)filepath;
+    return std::string();
+#endif
+}
+
+void OpenGLRenderer::createFullscreenQuad()
+{
+#ifdef USE_OPENGL
+    if (m_fullscreenQuadVAO != 0) return;
+
+    const float vertices[] = {
+        // positions   // texCoords
+        -1.0f,  1.0f, 0.0f, 1.0f,
+        -1.0f, -1.0f, 0.0f, 0.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+
+        -1.0f,  1.0f, 0.0f, 1.0f,
+         1.0f, -1.0f, 1.0f, 0.0f,
+         1.0f,  1.0f, 1.0f, 1.0f,
+    };
+
+    glGenVertexArrays(1, &m_fullscreenQuadVAO);
+    glGenBuffers(1, &m_fullscreenQuadVBO);
+
+    glBindVertexArray(m_fullscreenQuadVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, m_fullscreenQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void*)(2 * sizeof(float)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+#endif
+}
+
+void OpenGLRenderer::createUIQuad()
+{
+#ifdef USE_OPENGL
+    if (m_uiQuadVAO != 0) return;
+
+    const float vertices[] = {
+        // positions          // texCoords
+        -0.5f,  0.5f, 0.0f,    0.0f, 1.0f,
+        -0.5f, -0.5f, 0.0f,    0.0f, 0.0f,
+         0.5f, -0.5f, 0.0f,    1.0f, 0.0f,
+         0.5f,  0.5f, 0.0f,    1.0f, 1.0f,
+    };
+
+    const unsigned int indices[] = {
+        0, 1, 2,
+        0, 2, 3
+    };
+
+    glGenVertexArrays(1, &m_uiQuadVAO);
+    glGenBuffers(1, &m_uiQuadVBO);
+    glGenBuffers(1, &m_uiQuadEBO);
+
+    glBindVertexArray(m_uiQuadVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, m_uiQuadVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_uiQuadEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
+
+    glBindVertexArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 #endif
 }
 
@@ -348,7 +757,6 @@ VulkanRenderer::VulkanRenderer()
     , m_swapchain(VK_NULL_HANDLE)
     , m_swapchainImageFormat(VK_FORMAT_B8G8R8A8_UNORM)
     , m_renderPass(VK_NULL_HANDLE)
-    , m_renderPassWithLoad(VK_NULL_HANDLE)
     , m_commandPool(VK_NULL_HANDLE)
     , m_currentFrame(0)
     , m_currentImageIndex(0)
@@ -359,10 +767,6 @@ VulkanRenderer::VulkanRenderer()
     , m_videoImageView(VK_NULL_HANDLE)
     , m_videoSampler(VK_NULL_HANDLE)
     , m_videoTextureInitialized(false)
-    , m_videoOpacity(1.0f)
-    , m_3dObjectsOpacity(1.0f)
-    , m_videoWidth(0)
-    , m_videoHeight(0)
 {
     m_swapchainExtent = {0, 0};
 }
@@ -417,11 +821,6 @@ bool VulkanRenderer::initialize(GLFWwindow* window)
         return false;
     }
     
-    if (!createRenderPassWithLoad()) {
-        std::cerr << "Failed to create render pass with load" << std::endl;
-        return false;
-    }
-    
     if (!createFramebuffers()) {
         std::cerr << "Failed to create framebuffers" << std::endl;
         return false;
@@ -443,7 +842,7 @@ bool VulkanRenderer::initialize(GLFWwindow* window)
     }
     
     m_initialized = true;
-    std::cout << "✅ VulkanRenderer initialized successfully" << std::endl;
+    std::cout << "[OK] VulkanRenderer initialized successfully" << std::endl;
     std::cout << "   Swapchain: " << m_swapchainExtent.width << "x" << m_swapchainExtent.height << std::endl;
     
     return true;
@@ -485,16 +884,6 @@ void VulkanRenderer::shutdown()
     m_meshes.clear();
     
     cleanupSwapchain();
-    
-    if (m_renderPassWithLoad != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(m_device, m_renderPassWithLoad, nullptr);
-        m_renderPassWithLoad = VK_NULL_HANDLE;
-    }
-    
-    if (m_renderPass != VK_NULL_HANDLE) {
-        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
-        m_renderPass = VK_NULL_HANDLE;
-    }
     
     if (m_commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
@@ -561,17 +950,16 @@ void VulkanRenderer::beginFrame()
     }
     
     // Если есть видеоизображение, копируем его в swapchain до начала render pass
-    bool hasVideo = m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE && m_videoWidth > 0 && m_videoHeight > 0;
-    if (hasVideo) {
-        // Копируем видео в swapchain перед render pass
+    if (m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE) {
+        // Гарантируем, что источник находится в правильном layout
+        // (updateVideoTexture переводит его в TRANSFER_SRC_OPTIMAL)
         copyVideoToSwapchain(m_commandBuffers[imageIndex], m_swapchainImages[imageIndex], m_swapchainExtent.width, m_swapchainExtent.height);
     }
     
-    // Начинаем render pass
-    // Если есть видео, используем render pass с LOAD_OP_LOAD чтобы не затереть видео
+    // Начинаем render pass (ничего не рисуем, но оставляем для будущих оверлеев)
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = hasVideo ? m_renderPassWithLoad : m_renderPass;
+    renderPassInfo.renderPass = m_renderPass;
     renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapchainExtent;
@@ -589,33 +977,6 @@ void VulkanRenderer::endFrame()
     uint32_t frameIndex = m_currentFrame % m_swapchainImages.size();
     
     vkCmdEndRenderPass(m_commandBuffers[imageIndex]);
-    
-    // Переводим swapchain изображение в PRESENT_SRC_KHR layout для отображения
-    // Это нужно всегда для правильного отображения
-    VkImageMemoryBarrier toPresent{};
-    toPresent.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toPresent.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toPresent.image = m_swapchainImages[imageIndex];
-    toPresent.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toPresent.subresourceRange.baseMipLevel = 0;
-    toPresent.subresourceRange.levelCount = 1;
-    toPresent.subresourceRange.baseArrayLayer = 0;
-    toPresent.subresourceRange.layerCount = 1;
-    toPresent.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    toPresent.dstAccessMask = 0;
-    
-    vkCmdPipelineBarrier(
-        m_commandBuffers[imageIndex],
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &toPresent
-    );
     
     if (vkEndCommandBuffer(m_commandBuffers[imageIndex]) != VK_SUCCESS) {
         std::cerr << "Failed to record command buffer" << std::endl;
@@ -664,16 +1025,6 @@ void VulkanRenderer::endFrame()
     m_currentFrame = (m_currentFrame + 1) % m_swapchainImages.size();
 }
 
-void VulkanRenderer::setVideoOpacity(float opacity)
-{
-    m_videoOpacity = opacity;
-}
-
-void VulkanRenderer::set3DObjectsOpacity(float opacity)
-{
-    m_3dObjectsOpacity = opacity;
-}
-
 void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height)
 {
     if (!m_initialized || !data || width == 0 || height == 0) {
@@ -681,38 +1032,17 @@ void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     }
     
     // Создаем или обновляем текстуру для видео
-    if (!m_videoTextureInitialized || m_videoWidth != width || m_videoHeight != height) {
-        if (m_videoTextureInitialized) {
-            // Пересоздаем текстуру если размер изменился
-            if (m_videoSampler != VK_NULL_HANDLE) {
-                vkDestroySampler(m_device, m_videoSampler, nullptr);
-                m_videoSampler = VK_NULL_HANDLE;
-            }
-            if (m_videoImageView != VK_NULL_HANDLE) {
-                vkDestroyImageView(m_device, m_videoImageView, nullptr);
-                m_videoImageView = VK_NULL_HANDLE;
-            }
-            if (m_videoImage != VK_NULL_HANDLE) {
-                vkDestroyImage(m_device, m_videoImage, nullptr);
-                vkFreeMemory(m_device, m_videoImageMemory, nullptr);
-                m_videoImage = VK_NULL_HANDLE;
-                m_videoImageMemory = VK_NULL_HANDLE;
-            }
-        }
-        
+    if (!m_videoTextureInitialized) {
         if (!createVideoTexture(width, height)) {
             std::cerr << "Failed to create video texture" << std::endl;
             return;
         }
         m_videoTextureInitialized = true;
-        m_videoWidth = width;
-        m_videoHeight = height;
     }
     
     // Обновляем текстуру данными с камеры
     updateVideoTexture(data, width, height);
     
-    // Opacity применяется при копировании в swapchain в beginFrame
     // TODO: Рендеринг полноэкранного квада с видео текстурой
     // Для этого нужен graphics pipeline с шейдерами
     // Пока текстура обновляется, но не отображается
@@ -1106,51 +1436,6 @@ bool VulkanRenderer::createRenderPass()
     return true;
 }
 
-bool VulkanRenderer::createRenderPassWithLoad()
-{
-    VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = m_swapchainImageFormat;
-    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD; // Загружаем существующее содержимое (видео)
-    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-    colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; // Ожидаем что изображение уже в этом layout
-    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    
-    VkSubpassDescription subpass{};
-    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
-    
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    
-    VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
-    renderPassInfo.subpassCount = 1;
-    renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-    
-    if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPassWithLoad) != VK_SUCCESS) {
-        return false;
-    }
-    
-    return true;
-}
-
 bool VulkanRenderer::createFramebuffers()
 {
     m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
@@ -1348,7 +1633,7 @@ bool VulkanRenderer::createVideoTexture(uint32_t width, uint32_t height)
     imageInfo.format = VK_FORMAT_R8G8B8_UNORM;
     imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Нужен TRANSFER_SRC для копирования
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     
@@ -1415,8 +1700,8 @@ bool VulkanRenderer::createVideoTexture(uint32_t width, uint32_t height)
         vkFreeMemory(m_device, m_videoImageMemory, nullptr);
         return false;
     }
-    // Переводим видеоизображение в GENERAL layout для записи данных напрямую в память
-    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL);
+    // Переводим видеоизображение в layout источника копирования (для дальнейших копий)
+    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
 
     return true;
 }
@@ -1448,11 +1733,7 @@ void VulkanRenderer::updateVideoTexture(const uint8_t* data, uint32_t width, uin
     }
     
     vkUnmapMemory(m_device, m_videoImageMemory);
-    
-    // Переводим изображение в TRANSFER_SRC_OPTIMAL для копирования в swapchain
-    // Это делается асинхронно, но для простоты делаем синхронно через отдельный command buffer
-    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, 
-                         VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    // Layout уже установлен в TRANSFER_SRC_OPTIMAL при создании
 }
 #endif
 
@@ -1521,11 +1802,6 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
         barrier.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
         sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         destinationStage = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
-    } else if (oldLayout == VK_IMAGE_LAYOUT_GENERAL && newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-        barrier.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
     }
 
     vkCmdPipelineBarrier(
@@ -1549,15 +1825,12 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
 }
 
-void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t swapchainWidth, uint32_t swapchainHeight)
+void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t width, uint32_t height)
 {
-    if (m_videoWidth == 0 || m_videoHeight == 0) return;
-    
     // Переводим swapchain в layout для назначения копирования
-    // Swapchain изображения обычно в PRESENT_SRC_KHR или UNDEFINED после acquire
     VkImageMemoryBarrier toDst{};
     toDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // После vkAcquireNextImageKHR обычно UNDEFINED
+    toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     toDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
     toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -1580,30 +1853,29 @@ void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapch
         1, &toDst
     );
 
-    // Используем blit для масштабирования видео на весь экран
-    // Это позволяет правильно масштабировать изображение
-    VkImageBlit blitRegion{};
-    blitRegion.srcOffsets[0] = {0, 0, 0};
-    blitRegion.srcOffsets[1] = {static_cast<int32_t>(m_videoWidth), static_cast<int32_t>(m_videoHeight), 1};
-    blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    blitRegion.srcSubresource.mipLevel = 0;
-    blitRegion.srcSubresource.baseArrayLayer = 0;
-    blitRegion.srcSubresource.layerCount = 1;
-    
-    blitRegion.dstOffsets[0] = {0, 0, 0};
-    blitRegion.dstOffsets[1] = {static_cast<int32_t>(swapchainWidth), static_cast<int32_t>(swapchainHeight), 1};
-    blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    blitRegion.dstSubresource.mipLevel = 0;
-    blitRegion.dstSubresource.baseArrayLayer = 0;
-    blitRegion.dstSubresource.layerCount = 1;
-    
-    // Используем blit для масштабирования
-    vkCmdBlitImage(
+    // Регион копирования (matching the smaller side, simple stretch to fit)
+    VkImageCopy copyRegion{};
+    copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.srcSubresource.mipLevel = 0;
+    copyRegion.srcSubresource.baseArrayLayer = 0;
+    copyRegion.srcSubresource.layerCount = 1;
+    copyRegion.srcOffset = {0, 0, 0};
+
+    copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    copyRegion.dstSubresource.mipLevel = 0;
+    copyRegion.dstSubresource.baseArrayLayer = 0;
+    copyRegion.dstSubresource.layerCount = 1;
+    copyRegion.dstOffset = {0, 0, 0};
+
+    copyRegion.extent.width = std::min(width, m_swapchainExtent.width);
+    copyRegion.extent.height = std::min(height, m_swapchainExtent.height);
+    copyRegion.extent.depth = 1;
+
+    vkCmdCopyImage(
         cmd,
         m_videoImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
         dstSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, &blitRegion,
-        VK_FILTER_LINEAR // Линейная фильтрация для плавного масштабирования
+        1, &copyRegion
     );
 
     // Возвращаем swapchain изображение в layout для color attachment

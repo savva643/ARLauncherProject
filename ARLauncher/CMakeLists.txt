@@ -6,8 +6,8 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Опции сборки
-option(USE_VULKAN "Use Vulkan renderer" ON)
-option(USE_OPENGL "Use OpenGL renderer" OFF)
+option(USE_VULKAN "Use Vulkan renderer" OFF)
+option(USE_OPENGL "Use OpenGL renderer" ON)
 
 if(USE_VULKAN)
     find_package(Vulkan QUIET)
@@ -86,6 +86,7 @@ endif()
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/ui)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 # Исходные файлы
 set(ARLAUNCHER_SOURCES
@@ -94,6 +95,7 @@ set(ARLAUNCHER_SOURCES
     src/Renderer.cpp
     src/Scene.cpp
     src/Camera.cpp
+    src/ARLauncherAPI.cpp
     ui/UIRenderer.cpp
     ui/UIElement.cpp
     ui/Window.cpp
@@ -108,6 +110,7 @@ set(ARLAUNCHER_HEADERS
     include/Renderer.h
     include/Scene.h
     include/Camera.h
+    include/ARLauncherAPI.h
     ui/UIRenderer.h
     ui/UIElement.h
     ui/Window.h
@@ -218,6 +221,9 @@ if(USE_SENSOR_CONNECTOR)
         message(WARNING "SensorConnector library not found. Build it first with qmake")
     endif()
 endif()
+
+# Копируем шейдеры в директорию сборки
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR})
 
 # Выходные директории
 set_target_properties(ARLauncher PROPERTIES

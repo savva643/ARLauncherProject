@@ -20,6 +20,7 @@
 #include "Text.h"
 #include "Style.h"
 #include "LensEngineAPI.h"
+#include "ARLauncherAPI.h"
 
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
@@ -85,6 +86,9 @@ bool Application::initialize(int argc, char* argv[])
     if (!initializeUI()) {
         return false;
     }
+
+    m_launcherAPI = std::make_unique<ARLauncherAPI>(this);
+    m_launcherAPI->initializeDefaultContent();
     
     if (!initializeLensEngine()) {
         return false;
@@ -142,6 +146,7 @@ void Application::shutdown()
 #endif
     
     m_uiRenderer.reset();
+    m_launcherAPI.reset();
     m_scene.reset();
     m_renderer.reset();
     m_lensEngine.reset();
@@ -199,11 +204,8 @@ bool Application::initializeWindow()
 
 bool Application::initializeRenderer()
 {
-#ifdef USE_VULKAN
-    m_renderer = createRenderer(true); // Используем Vulkan если доступен
-#else
+    // Всегда используем OpenGL для стабильной работы
     m_renderer = createRenderer(false); // Используем OpenGL
-#endif
     
     if (!m_renderer) {
         std::cerr << "Failed to create renderer" << std::endl;
@@ -242,7 +244,7 @@ bool Application::initializeUI()
     }
     
     // Создаем AR UI элементы с красивым стилем
-    auto startButton = std::make_shared<Button>("🚀 Start AR");
+    auto startButton = std::make_shared<Button>("Start AR");
     startButton->setPosition(glm::vec2(20.0f, 20.0f));
     startButton->setSize(glm::vec2(180.0f, 50.0f));
     startButton->setStyle(std::make_shared<Style>(Style::createARButtonStyle()));
@@ -484,12 +486,12 @@ bool Application::initializeSensorConnector()
                                  memcpy(&magY, rawData + 88, 8);
                                  memcpy(&magZ, rawData + 96, 8);
                                  
-                                 std::cout << "📱 IMU 6DOF (Seq: " << data.sequenceNumber << "): "
+                                 std::cout << "[IMU] 6DOF (Seq: " << data.sequenceNumber << "): "
                                            << "Pos: (0, 0, 0) "  // Позиция будет из AR tracking
                                            << "Rot: (" << std::fixed << std::setprecision(2)
-                                           << "P:" << pitch * 180.0f / 3.14159f << "° "
-                                           << "R:" << roll * 180.0f / 3.14159f << "° "
-                                           << "Y:0°) "
+                                           << "P:" << pitch * 180.0f / 3.14159f << " deg "
+                                           << "R:" << roll * 180.0f / 3.14159f << " deg "
+                                           << "Y:0 deg) "
                                            << "Accel:(" << accelX << "," << accelY << "," << accelZ << ") "
                                            << "Gyro:(" << gyroX << "," << gyroY << "," << gyroZ << ")" << std::endl;
                                  
@@ -513,7 +515,7 @@ bool Application::initializeSensorConnector()
     // Запускаем серверы на порту 9000 (TCP и UDP)
     m_sensorConnector->startServers(9000, 9000);
     
-    std::cout << "✅ SensorConnector initialized" << std::endl;
+    std::cout << "[OK] SensorConnector initialized" << std::endl;
     std::cout << "   TCP Server: port 9000" << std::endl;
     std::cout << "   UDP Server: port 9000" << std::endl;
     std::cout << "   USB Server: port 9001" << std::endl;
@@ -597,6 +599,8 @@ void Application::render()
         auto meshIds = m_scene->getVisibleMeshIds();
         m_renderer->render3DObjects(transforms, meshIds);
     }
+
+    m_renderer->renderUIWindows();
     
     // Рендеринг UI поверх всего
     // Применяем opacity для анимации

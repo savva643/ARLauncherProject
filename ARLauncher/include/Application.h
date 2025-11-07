@@ -22,6 +22,7 @@ class Text;
 class Renderer;
 class Scene;
 class UIRenderer;
+class ARLauncherAPI;
 
 /**
  * @brief Главный класс приложения ARLauncher
@@ -69,6 +70,7 @@ private:
     std::unique_ptr<Renderer> m_renderer;
     std::unique_ptr<Scene> m_scene;
     std::unique_ptr<UIRenderer> m_uiRenderer;
+    std::unique_ptr<ARLauncherAPI> m_launcherAPI;
     std::unique_ptr<LensEngine::LensEngineAPI> m_lensEngine;
 #ifdef USE_SENSOR_CONNECTOR
     std::unique_ptr<SensorConnector::SensorConnectorCore> m_sensorConnector;
