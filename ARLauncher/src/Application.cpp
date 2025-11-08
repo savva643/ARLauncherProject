@@ -324,12 +324,24 @@ bool Application::initializeLensEngine()
     }
     
     // Установка колбэков
+    static int poseCallbackCounter = 0;
     m_lensEngine->setPoseCallback([this](const LensEngine::CameraPose& pose) {
         // Обновляем целевую позицию и ротацию из LensEngine для интерполяции
         m_targetCameraPosition = pose.position;
         m_targetCameraRotation = pose.rotation;
         m_lastIMUUpdateTime = static_cast<float>(QDateTime::currentMSecsSinceEpoch()) / 1000.0f;
         m_positionInitialized = true;
+        
+        // Логируем каждые 60 обновлений позы
+        if (poseCallbackCounter++ % 60 == 0) {
+            glm::vec3 euler = glm::eulerAngles(pose.rotation);
+            std::cout << "[Camera] Pose updated - Pos: (" 
+                      << std::fixed << std::setprecision(2)
+                      << pose.position.x << "," << pose.position.y << "," << pose.position.z << ") "
+                      << "Rot: (P:" << euler.x * 180.0f / 3.14159f 
+                      << " R:" << euler.y * 180.0f / 3.14159f 
+                      << " Y:" << euler.z * 180.0f / 3.14159f << ")" << std::endl;
+        }
         
         // Немедленно обновляем камеру без интерполяции для отзывчивости
         if (m_scene && m_scene->getCamera()) {
@@ -368,9 +380,32 @@ bool Application::initializeSensorConnector()
     }
     
     // Подключаем сигналы для получения декодированных RGB кадров с камеры iPhone
+    static int rgbLogCounter = 0;
     QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::frameDecoded,
                      [this](const QImage& frame, quint64 sequenceNumber) {
                          if (m_renderer && !frame.isNull()) {
+                            // Логируем RGB кадр каждые 60 кадров вместе с IMU данными
+                            if (rgbLogCounter++ % 60 == 0) {
+                                std::cout << "[RGB] Frame received - Seq: " << sequenceNumber 
+                                          << " Size: " << frame.width() << "x" << frame.height() << std::endl;
+                                
+                                // Получаем текущую позицию из LensEngine для логирования
+                                if (m_lensEngine) {
+                                    auto currentPose = m_lensEngine->getCurrentCameraPose();
+                                    glm::vec3 euler = glm::eulerAngles(currentPose.rotation);
+                                    float pitchDeg = euler.x * 180.0f / 3.14159f;
+                                    float rollDeg = euler.y * 180.0f / 3.14159f;
+                                    float yawDeg = euler.z * 180.0f / 3.14159f;
+                                    
+                                    std::cout << "[IMU] 6DOF (Seq: " << sequenceNumber << "): "
+                                              << "Pos: (" << std::fixed << std::setprecision(2)
+                                              << currentPose.position.x << "," 
+                                              << currentPose.position.y << "," 
+                                              << currentPose.position.z << ") "
+                                              << "Rot: (P:" << pitchDeg << " deg R:" << rollDeg << " deg Y:" << yawDeg << " deg)" << std::endl;
+                                }
+                            }
+                            
                             // Преобразуем QImage в RGB
                             QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
                             

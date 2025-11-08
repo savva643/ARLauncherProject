@@ -637,7 +637,10 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
             m_videoTextureHeight = height;
         } else {
             // Используем glTexSubImage2D для обновления существующей текстуры (быстрее, стрим)
+            // Оптимизация: используем GL_UNPACK_ALIGNMENT для быстрой загрузки
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 4); // Возвращаем обратно
         }
     }
     
@@ -681,11 +684,36 @@ void OpenGLRenderer::renderStoredVideoBackground()
         glEnable(GL_TEXTURE_2D);
         glBindTexture(GL_TEXTURE_2D, m_videoTexture);
         glColor4f(1.0f, 1.0f, 1.0f, m_videoOpacity);
+        
+        // Вычисляем соотношение сторон для правильного отображения
+        float windowAspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+        float videoAspect = (m_videoTextureWidth > 0 && m_videoTextureHeight > 0) 
+            ? static_cast<float>(m_videoTextureWidth) / static_cast<float>(m_videoTextureHeight) 
+            : windowAspect;
+        
+        float displayWidth = 1.0f;
+        float displayHeight = 1.0f;
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        
+        if (videoAspect > windowAspect) {
+            // Видео шире - подгоняем по ширине
+            displayWidth = 1.0f;
+            displayHeight = windowAspect / videoAspect;
+            offsetY = (1.0f - displayHeight) * 0.5f;
+        } else {
+            // Видео выше - подгоняем по высоте
+            displayWidth = videoAspect / windowAspect;
+            displayHeight = 1.0f;
+            offsetX = (1.0f - displayWidth) * 0.5f;
+        }
+        
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(0.0f, 0.0f);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(1.0f, 0.0f);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(1.0f, 1.0f);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(0.0f, 1.0f);
+        // Исправляем переворот - меняем координаты текстуры местами
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(offsetX, offsetY);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(offsetX + displayWidth, offsetY);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(offsetX + displayWidth, offsetY + displayHeight);
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(offsetX, offsetY + displayHeight);
         glEnd();
         glDisable(GL_TEXTURE_2D);
         glPopMatrix();
@@ -705,6 +733,10 @@ void OpenGLRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
     if (transforms.size() != meshIds.size() || transforms.empty()) {
         return;
     }
+
+    // Включаем depth test и отключаем culling для отображения обеих сторон
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE); // Отключаем culling чтобы видеть обе стороны куба
 
     if (m_basicShaderProgram != 0) {
         glUseProgram(m_basicShaderProgram);

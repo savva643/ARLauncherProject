@@ -44,7 +44,8 @@ void Text::render()
     
     int width, height;
     glfwGetWindowSize(glfwGetCurrentContext(), &width, &height);
-    glOrtho(0, width, height, 0, -1, 1);
+    // Исправляем переворот - меняем порядок координат
+    glOrtho(0, width, 0, height, -1, 1);
     
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();
