@@ -44,8 +44,9 @@ void Text::render()
     
     int width, height;
     glfwGetWindowSize(glfwGetCurrentContext(), &width, &height);
-    // Исправляем переворот - меняем порядок координат
-    glOrtho(0, width, 0, height, -1, 1);
+    // OpenGL координаты: (0,0) внизу слева, но мы хотим (0,0) вверху слева для UI
+    // Поэтому используем glOrtho с инвертированными Y координатами
+    glOrtho(0, width, height, 0, -1, 1);
     
     glMatrixMode(GL_MODELVIEW);
     glPushMatrix();

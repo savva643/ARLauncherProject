@@ -56,6 +56,8 @@ glm::vec3 Camera::getRight() const
 
 glm::mat4 Camera::getViewMatrix() const
 {
+    // Правильная матрица вида: сначала поворот, потом перемещение
+    // В AR камера движется в пространстве, поэтому нужно инвертировать позицию
     glm::mat4 rotation = glm::mat4_cast(glm::conjugate(m_rotation));
     glm::mat4 translation = glm::translate(glm::mat4(1.0f), -m_position);
     return rotation * translation;

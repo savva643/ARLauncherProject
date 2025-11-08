@@ -637,10 +637,14 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
             m_videoTextureHeight = height;
         } else {
             // Используем glTexSubImage2D для обновления существующей текстуры (быстрее, стрим)
-            // Оптимизация: используем GL_UNPACK_ALIGNMENT для быстрой загрузки
+            // Оптимизация для достижения 30 FPS:
+            // 1. Используем GL_UNPACK_ALIGNMENT=1 для RGB (3 байта на пиксель)
+            // 2. Отключаем синхронизацию для максимальной скорости
             glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0); // Используем полную ширину
             glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
             glPixelStorei(GL_UNPACK_ALIGNMENT, 4); // Возвращаем обратно
+            glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
         }
     }
     
@@ -709,11 +713,12 @@ void OpenGLRenderer::renderStoredVideoBackground()
         }
         
         glBegin(GL_QUADS);
-        // Исправляем переворот - меняем координаты текстуры местами
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(offsetX, offsetY);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(offsetX + displayWidth, offsetY);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(offsetX + displayWidth, offsetY + displayHeight);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(offsetX, offsetY + displayHeight);
+        // QImage имеет координаты сверху вниз (0,0 вверху), OpenGL текстуры снизу вверх (0,0 внизу)
+        // Поэтому нужно перевернуть координаты текстуры по Y
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(offsetX, offsetY);
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(offsetX + displayWidth, offsetY);
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(offsetX + displayWidth, offsetY + displayHeight);
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(offsetX, offsetY + displayHeight);
         glEnd();
         glDisable(GL_TEXTURE_2D);
         glPopMatrix();
