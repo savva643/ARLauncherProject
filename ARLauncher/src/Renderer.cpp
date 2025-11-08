@@ -262,150 +262,24 @@ inline void nvgFill(NVGcontext* ctx) {
     ctx->path.valid = false;
 }
 
-struct SimpleGlyph {
-    char character;
-    const char* rows[7];
-};
-
-inline const SimpleGlyph* _findGlyph(char c) {
-    static const SimpleGlyph glyphs[] = {
-        {'A', {"  #  "," # # ","#   #","#####","#   #","#   #","#   #"}},
-        {'B', {"#### ","#   #","#   #","#### ","#   #","#   #","#### "}},
-        {'C', {" ### ","#   #","#    ","#    ","#    ","#   #"," ### "}},
-        {'D', {"#### ","#   #","#   #","#   #","#   #","#   #","#### "}},
-        {'E', {"#####","#    ","#    ","#####","#    ","#    ","#####"}},
-        {'G', {" ### ","#   #","#    ","# ###","#   #","#   #"," ### "}},
-        {'H', {"#   #","#   #","#   #","#####","#   #","#   #","#   #"}},
-        {'L', {"#    ","#    ","#    ","#    ","#    ","#    ","#####"}},
-        {'M', {"#   #","## ##","# # #","#   #","#   #","#   #","#   #"}},
-        {'N', {"#   #","##  #","# # #","#  ##","#   #","#   #","#   #"}},
-        {'O', {" ### ","#   #","#   #","#   #","#   #","#   #"," ### "}},
-        {'P', {"#### ","#   #","#   #","#### ","#    ","#    ","#    "}},
-        {'R', {"#### ","#   #","#   #","#### ","# #  ","#  # ","#   #"}},
-        {'S', {" ####","#    ","#    "," ### ","    #","    #","#### "}},
-        {'T', {"#####","  #  ","  #  ","  #  ","  #  ","  #  ","  #  "}},
-        {'U', {"#   #","#   #","#   #","#   #","#   #","#   #"," ### "}},
-        {'V', {"#   #","#   #","#   #","#   #","#   #"," # # ","  #  "}},
-        {'W', {"#   #","#   #","#   #","# # #","# # #","## ##","#   #"}},
-        {'Y', {"#   #","#   #"," # # ","  #  ","  #  ","  #  ","  #  "}},
-        {'Z', {"#####","    #","   # ","  #  "," #   ","#    ","#####"}},
-        {'0', {" ### ","#   #","#  ##","# # #","##  #","#   #"," ### "}},
-        {'1', {"  #  "," ##  ","  #  ","  #  ","  #  ","  #  "," ### "}},
-        {'2', {" ### ","#   #","    #","   # ","  #  "," #   ","#####"}},
-        {'3', {" ### ","#   #","    #"," ### ","    #","#   #"," ### "}},
-        {'4', {"   # ","  ## "," # # ","#  # ","#####","   # ","   # "}},
-        {'5', {"#####","#    ","#    ","#### ","    #","#   #"," ### "}},
-        {'6', {" ### ","#   #","#    ","#### ","#   #","#   #"," ### "}},
-        {'7', {"#####","    #","   # ","  #  ","  #  ","  #  ","  #  "}},
-        {'8', {" ### ","#   #","#   #"," ### ","#   #","#   #"," ### "}},
-        {'9', {" ### ","#   #","#   #"," ####","    #","#   #"," ### "}},
-        {' ', {"     ","     ","     ","     ","     ","     ","     "}},
-        {'-', {"     ","     ","     ","#####","     ","     ","     "}},
-        {':', {"     ","  #  ","     ","     ","     ","  #  ","     "}},
-        {'.', {"     ","     ","     ","     ","     ","  #  ","  #  "}},
-        {',', {"     ","     ","     ","     ","  #  ","  #  "," #   "}},
-        {'!', {"  #  ","  #  ","  #  ","  #  ","  #  ","     ","  #  "}},
-        {'?', {" ### ","#   #","   # ","  #  ","  #  ","     ","  #  "}},
-        {'I', {"#####","  #  ","  #  ","  #  ","  #  ","  #  ","#####"}},
-        {'F', {"#####","#    ","#    ","#####","#    ","#    ","#    "}},
-        {'J', {"#####","    #","    #","    #","    #","#   #"," ### "}},
-        {'K', {"#   #","#  # ","# #  ","##   ","# #  ","#  # ","#   #"}},
-        {'Q', {" ### ","#   #","#   #","#   #","#  ##","#   #"," ### "}},
-        {'X', {"#   #"," # # ","  #  ","  #  "," # # ","#   #","#   #"}}
-    };
-    for (const auto& glyph : glyphs) {
-        if (glyph.character == c) return &glyph;
-    }
-    return nullptr;
-}
-
-// Простая функция для проверки UTF-8 символов
-inline bool isUTF8StartByte(unsigned char byte) {
-    return (byte & 0x80) == 0 || (byte & 0xE0) == 0xC0 || (byte & 0xF0) == 0xE0 || (byte & 0xF8) == 0xF0;
-}
-
+// Удалены глифы - теперь используется FontRenderer через Text класс
+// Простой fallback для nvgText (используется только если FontRenderer недоступен)
 inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const char* end) {
     if (!ctx || !string) return;
+    // Простой fallback - просто выводим текст как точки (для отладки)
+    // В реальном использовании должен использоваться FontRenderer через Text класс
     std::string text(end ? std::string(string, end) : std::string(string));
-    
-    // Обрабатываем UTF-8 строку - для простоты показываем ASCII и базовые символы
-    // Для полной поддержки нужна библиотека FreeType
-    std::string processedText;
-    for (size_t i = 0; i < text.length(); ) {
-        unsigned char byte = static_cast<unsigned char>(text[i]);
-        
-        // ASCII символ (0-127) - оставляем как есть
-        if (byte < 128) {
-            processedText += static_cast<char>(byte);
-            i++;
-        }
-        // UTF-8 последовательность - для русских букв (Cyrillic) это 2-byte последовательности
-        else if ((byte & 0xE0) == 0xC0) { // 2-byte sequence (русские буквы)
-            // Пропускаем русские символы, так как у нас нет глифов для них
-            // В будущем нужно добавить поддержку через FreeType
-            processedText += '?';
-            i += 2;
-        }
-        else if ((byte & 0xF0) == 0xE0) { // 3-byte sequence
-            processedText += '?';
-            i += 3;
-        }
-        else if ((byte & 0xF8) == 0xF0) { // 4-byte sequence
-            processedText += '?';
-            i += 4;
-        }
-        else {
-            // Неизвестная последовательность, пропускаем
-            i++;
-        }
-    }
-    
-    const float cellWidth = ctx->fontSize * 0.6f;
-    const float cellHeight = ctx->fontSize;
-    const float spacing = ctx->fontSize * 0.15f;
-    float totalWidth = 0.0f;
-    for (char ch : processedText) {
-        if (ch == ' ') totalWidth += cellWidth * 0.5f;
-        else totalWidth += cellWidth + spacing;
-    }
-    float startX = x;
-    float startY = y;
-    if (ctx->textAlign & NVG_ALIGN_CENTER) startX -= totalWidth * 0.5f;
-    else if (ctx->textAlign & NVG_ALIGN_RIGHT) startX -= totalWidth;
-    if (ctx->textAlign & NVG_ALIGN_MIDDLE) startY -= cellHeight * 0.5f;
-    else if (ctx->textAlign & NVG_ALIGN_BOTTOM) startY -= cellHeight;
     glColor4f(ctx->fillColor.r, ctx->fillColor.g, ctx->fillColor.b, ctx->fillColor.a);
-    float penX = startX;
-    for (char ch : processedText) {
-        if (ch == ' ') { 
-            penX += cellWidth * 0.5f; 
-            continue; 
+    glPointSize(ctx->fontSize * 0.3f);
+    glBegin(GL_POINTS);
+    float penX = x;
+    for (size_t i = 0; i < text.length() && i < 100; ++i) {
+        if (text[i] != ' ') {
+            glVertex2f(penX, y);
         }
-        if (ch == '?') {
-            // Рисуем простой квадрат для неизвестных символов
-            const float blockSize = cellWidth * 0.8f;
-            _drawFilledRect(penX, startY, blockSize, blockSize, ctx->fillColor);
-            penX += cellWidth + spacing;
-            continue;
-        }
-        const SimpleGlyph* glyph = _findGlyph(ch);
-        if (!glyph) { 
-            penX += cellWidth + spacing; 
-            continue; 
-        }
-        const float blockSizeX = cellWidth / 5.0f;
-        const float blockSizeY = cellHeight / 7.0f;
-        for (int row = 0; row < 7; ++row) {
-            for (int col = 0; col < 5; ++col) {
-                if (glyph->rows[row][col] == '#') {
-                    float rx = penX + col * blockSizeX;
-                    float ry = startY + row * blockSizeY;
-                    _drawFilledRect(rx, ry, blockSizeX * 0.9f, blockSizeY * 0.9f, ctx->fillColor);
-                }
-            }
-        }
-        penX += cellWidth + spacing;
+        penX += ctx->fontSize * 0.5f;
     }
+    glEnd();
 }
 } // namespace
 

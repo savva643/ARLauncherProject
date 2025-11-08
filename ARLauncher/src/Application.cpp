@@ -302,9 +302,22 @@ bool Application::initializeLensEngine()
     
     // Установка колбэков
     m_lensEngine->setPoseCallback([this](const LensEngine::CameraPose& pose) {
+        // Обновляем целевую позицию и ротацию для интерполяции
+#ifdef USE_SENSOR_CONNECTOR
+        m_targetCameraPosition = pose.position;
+        m_targetCameraRotation = pose.rotation;
+        
+        // Инициализируем текущую позицию при первом обновлении
+        if (!m_positionInitialized) {
+            m_currentCameraPosition = pose.position;
+            m_currentCameraRotation = pose.rotation;
+            m_positionInitialized = true;
+        }
+#else
         if (m_scene) {
             m_scene->updateCameraFromAR(pose.position, pose.rotation);
         }
+#endif
     });
     
     return true;
@@ -331,6 +344,13 @@ bool Application::initializeSensorConnector()
     m_uiOpacity = 0.0f;
     m_titleOpacity = 0.0f;
     
+    // Инициализируем переменные камеры для интерполяции
+    m_targetCameraPosition = glm::vec3(0.0f);
+    m_targetCameraRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    m_currentCameraPosition = glm::vec3(0.0f);
+    m_currentCameraRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    m_positionInitialized = false;
+    
     if (!m_sensorConnector->initialize()) {
         std::cerr << "Failed to initialize SensorConnector" << std::endl;
         return false;
@@ -340,138 +360,50 @@ bool Application::initializeSensorConnector()
     QObject::connect(m_sensorConnector.get(), &SensorConnector::SensorConnectorCore::frameDecoded,
                      [this](const QImage& frame, quint64 sequenceNumber) {
                          if (m_renderer && !frame.isNull()) {
-                            // Преобразуем QImage в RGB
-                            QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
-                            
                             // Инициализируем splash start time при первом кадре
                             if (m_splashStartMs == 0) {
                                 m_splashStartMs = QDateTime::currentMSecsSinceEpoch();
                             }
-
-                            // Splash анимация согласно требованиям:
-                            // 0-3s: черный экран, появляются надписи "Spatial Home" (центр) и "GlaskiOS" (внизу)
-                            // 3-6s: появляется видео фон, 3D объекты и UI (все одновременно с fade in)
-                            // 6-9s: исчезают надписи (fade out), видео/3D/UI остаются
-                            if (m_splashActive) {
-                                qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
-                                if (m_splashStartMs == 0) m_splashStartMs = nowMs;
-                                qreal elapsed = qreal(nowMs - m_splashStartMs) / 1000.0; // секунды
-                                if (elapsed >= 9.0) {
-                                    m_splashActive = false;
-                                    m_videoOpacity = 1.0f;
-                                    m_3dObjectsOpacity = 1.0f;
-                                    m_uiOpacity = 1.0f;
-                                    m_titleOpacity = 0.0f;
-                                    elapsed = 9.0;
+                             
+                            // Быстрое преобразование в RGB без QPainter операций
+                            QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
+                             
+                            if (!rgbFrame.isNull()) {
+                                uint32_t width = static_cast<uint32_t>(rgbFrame.width());
+                                uint32_t height = static_cast<uint32_t>(rgbFrame.height());
+                                const uint8_t* rgbData = rgbFrame.constBits();
+                                
+                                // Передаем RGB данные в LensEngine для обработки (асинхронно)
+                                if (m_lensEngine) {
+                                    uint64_t timestamp = QDateTime::currentMSecsSinceEpoch();
+                                    size_t dataSize = width * height * 3; // RGB888
+                                    m_lensEngine->processRGBData(rgbData, dataSize, width, height, timestamp);
                                 }
-
-                                // Вычисляем opacity для каждого компонента
-                                if (elapsed < 3.0) {
-                                    // 0-3s: черный экран, появляются надписи
-                                    m_videoOpacity = 0.0f;
-                                    m_3dObjectsOpacity = 0.0f;
-                                    m_uiOpacity = 0.0f;
-                                    // Надписи появляются с fade in
-                                    m_titleOpacity = static_cast<float>(elapsed / 3.0); // 0 -> 1 за 3 секунды
-                                } else if (elapsed < 6.0) {
-                                    // 3-6s: появляется видео, 3D объекты и UI одновременно
-                                    m_titleOpacity = 1.0f;
-                                    // Все появляются одновременно с fade in за 3 секунды
-                                    float fadeIn = static_cast<float>((elapsed - 3.0) / 3.0); // 0 -> 1 за 3 секунды
-                                    m_videoOpacity = fadeIn;
-                                    m_3dObjectsOpacity = fadeIn;
-                                    m_uiOpacity = fadeIn;
-                                } else {
-                                    // 6-9s: исчезают надписи, остальное остается
-                                    m_videoOpacity = 1.0f;
-                                    m_3dObjectsOpacity = 1.0f;
-                                    m_uiOpacity = 1.0f;
-                                    // Надписи исчезают с fade out
-                                    float fadeOut = static_cast<float>((9.0 - elapsed) / 3.0); // 1 -> 0 за 3 секунды
-                                    m_titleOpacity = fadeOut;
-                                }
-
-                                QPainter p(&rgbFrame);
-                                p.setRenderHint(QPainter::Antialiasing, true);
-
-                                // Применяем opacity к видео кадру
-                                if (m_videoOpacity < 1.0f) {
-                                    QImage cameraFrame = rgbFrame.copy();
-                                    p.fillRect(rgbFrame.rect(), QColor(0, 0, 0, 255));
-                                    p.setOpacity(m_videoOpacity);
-                                    p.drawImage(0, 0, cameraFrame);
-                                    p.setOpacity(1.0);
-                                }
-
-                                // Рисуем надписи поверх всего (если titleOpacity > 0)
-                                if (m_titleOpacity > 0.0f) {
-                                    // "Spatial Home" по центру (сверху)
-                                    QFont titleFont;
-                                    titleFont.setFamily("Sans Serif");
-                                    titleFont.setBold(true);
-                                    titleFont.setPointSizeF(std::max(32.0, rgbFrame.width() * 0.05));
-                                    p.setFont(titleFont);
-                                    p.setPen(QColor(255, 255, 255, int(255 * m_titleOpacity)));
-                                    QString title = QString::fromUtf8("Spatial Home");
-                                    QFontMetrics fmTitle(titleFont);
-                                    int xTitle = (rgbFrame.width() - fmTitle.horizontalAdvance(title)) / 2;
-                                    int yTitle = int(rgbFrame.height() * 0.35); // По центру, немного выше
-                                    p.drawText(xTitle, yTitle, title);
-
-                                    // "GlaskiOS" внизу по центру (как "Powered by Android")
-                                    QFont subFont;
-                                    subFont.setFamily("Sans Serif");
-                                    subFont.setBold(false);
-                                    subFont.setPointSizeF(std::max(18.0, rgbFrame.width() * 0.025));
-                                    p.setFont(subFont);
-                                    QString sub = QString::fromUtf8("GlaskiOS");
-                                    QFontMetrics fmSub(subFont);
-                                    int xSub = (rgbFrame.width() - fmSub.horizontalAdvance(sub)) / 2;
-                                    int ySub = int(rgbFrame.height() * 0.85); // Внизу
-                                    p.setPen(QColor(255, 255, 255, int(255 * m_titleOpacity)));
-                                    p.drawText(xSub, ySub, sub);
+                                
+                                // Быстрое обновление текстуры видео (без рендеринга)
+                                m_renderer->renderVideoBackground(rgbData, width, height);
+                                
+                                static int frameCount = 0;
+                                if (frameCount++ % 60 == 0) {
+                                    // Получаем текущую позицию из LensEngine для логирования
+                                    if (m_lensEngine) {
+                                        auto currentPose = m_lensEngine->getCurrentCameraPose();
+                                        glm::vec3 euler = glm::eulerAngles(currentPose.rotation);
+                                        float pitchDeg = euler.x * 180.0f / 3.14159f;
+                                        float rollDeg = euler.y * 180.0f / 3.14159f;
+                                        float yawDeg = euler.z * 180.0f / 3.14159f;
+                                        
+                                        std::cout << "[RGB] Frame received - Seq: " << sequenceNumber 
+                                                  << " Size: " << width << "x" << height << std::endl;
+                                        std::cout << "[IMU] 6DOF (Seq: " << sequenceNumber << "): "
+                                                  << "Pos: (" << std::fixed << std::setprecision(2)
+                                                  << currentPose.position.x << "," 
+                                                  << currentPose.position.y << "," 
+                                                  << currentPose.position.z << ") "
+                                                  << "Rot: (P:" << pitchDeg << " deg R:" << rollDeg << " deg Y:" << yawDeg << " deg)" << std::endl;
+                                    }
                                 }
                             }
-                             
-                             if (!rgbFrame.isNull()) {
-                                 uint32_t width = static_cast<uint32_t>(rgbFrame.width());
-                                 uint32_t height = static_cast<uint32_t>(rgbFrame.height());
-                                 const uint8_t* rgbData = rgbFrame.constBits();
-                                 
-                                 // Передаем RGB данные в LensEngine для обработки
-                                 if (m_lensEngine) {
-                                     uint64_t timestamp = QDateTime::currentMSecsSinceEpoch();
-                                     size_t dataSize = width * height * 3; // RGB888
-                                     m_lensEngine->processRGBData(rgbData, dataSize, width, height, timestamp);
-                                 }
-                                 
-                                 // Применяем opacity к видео через renderer
-                                 m_renderer->setVideoOpacity(m_videoOpacity);
-                                 
-                                 // Рендерим видео фон для AR (только обновление текстуры, без рендеринга)
-                                 m_renderer->renderVideoBackground(rgbData, width, height);
-                                 
-                                 static int frameCount = 0;
-                                 if (frameCount++ % 60 == 0) {
-                                     // Получаем текущую позицию из LensEngine для логирования
-                                     if (m_lensEngine) {
-                                         auto currentPose = m_lensEngine->getCurrentCameraPose();
-                                         glm::vec3 euler = glm::eulerAngles(currentPose.rotation);
-                                         float pitchDeg = euler.x * 180.0f / 3.14159f;
-                                         float rollDeg = euler.y * 180.0f / 3.14159f;
-                                         float yawDeg = euler.z * 180.0f / 3.14159f;
-                                         
-                                         std::cout << "[RGB] Frame received - Seq: " << sequenceNumber 
-                                                   << " Size: " << width << "x" << height << std::endl;
-                                         std::cout << "[IMU] 6DOF (Seq: " << sequenceNumber << "): "
-                                                   << "Pos: (" << std::fixed << std::setprecision(2)
-                                                   << currentPose.position.x << "," 
-                                                   << currentPose.position.y << "," 
-                                                   << currentPose.position.z << ") "
-                                                   << "Rot: (P:" << pitchDeg << " deg R:" << rollDeg << " deg Y:" << yawDeg << " deg)" << std::endl;
-                                     }
-                                 }
-                             }
                          }
                      });
     
@@ -568,11 +500,36 @@ bool Application::initializeSensorConnector()
 
 void Application::update(float deltaTime)
 {
+#ifdef USE_SENSOR_CONNECTOR
+    // Плавная интерполяция камеры каждый кадр
+    if (m_scene && m_lensEngine) {
+        auto targetPose = m_lensEngine->getCurrentCameraPose();
+        
+        // Обновляем целевую позицию и ротацию
+        m_targetCameraPosition = targetPose.position;
+        m_targetCameraRotation = targetPose.rotation;
+        
+        // Плавная интерполяция к целевой позиции и ротации
+        const float interpolationSpeed = 15.0f; // Скорость интерполяции
+        float t = std::min(1.0f, deltaTime * interpolationSpeed);
+        
+        // Интерполируем позицию
+        m_currentCameraPosition = glm::mix(m_currentCameraPosition, m_targetCameraPosition, t);
+        
+        // Интерполируем ротацию (spherical linear interpolation)
+        m_currentCameraRotation = glm::slerp(m_currentCameraRotation, m_targetCameraRotation, t);
+        m_currentCameraRotation = glm::normalize(m_currentCameraRotation);
+        
+        // Применяем интерполированную позицию и ротацию к камере
+        m_scene->updateCameraFromAR(m_currentCameraPosition, m_currentCameraRotation);
+    }
+#else
     // Обновляем камеру каждый кадр из LensEngine (для плавного движения)
     if (m_scene && m_lensEngine) {
         auto currentPose = m_lensEngine->getCurrentCameraPose();
         m_scene->updateCameraFromAR(currentPose.position, currentPose.rotation);
     }
+#endif
     
     if (m_scene) {
         m_scene->update(deltaTime);
