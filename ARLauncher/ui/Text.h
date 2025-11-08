@@ -19,6 +19,9 @@ public:
     float getFontSize() const { return m_fontSize; }
     
     void render() override;
+    
+    // Установка глобального FontRenderer для всех Text элементов
+    static void setGlobalFontRenderer(class FontRenderer* renderer);
 
 private:
     std::string m_text;

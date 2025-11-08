@@ -1,10 +1,19 @@
 #include "Text.h"
 #include "Style.h"
+#include "FontRenderer.h"
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #include <GL/gl.h>
 #endif
 #include <memory>
+
+// Глобальный FontRenderer (можно сделать синглтоном или передавать через контекст)
+static FontRenderer* g_fontRenderer = nullptr;
+
+void Text::setGlobalFontRenderer(FontRenderer* renderer)
+{
+    g_fontRenderer = renderer;
+}
 
 Text::Text(const std::string& text)
     : m_text(text)
@@ -28,8 +37,6 @@ void Text::render()
         return;
     }
     
-    // Простой OpenGL рендеринг текста (заглушка)
-    // В реальности нужна библиотека для рендеринга текста (FreeType, stb_truetype)
     glDisable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
@@ -46,24 +53,39 @@ void Text::render()
     // AR стиль текста
     auto style = m_style ? m_style : std::make_shared<Style>(Style::createARTextStyle());
     glm::vec4 textColor = style->textColor;
-    glColor4f(textColor.r, textColor.g, textColor.b, textColor.a * style->opacity);
     
-    // Простой индикатор текста (квадрат)
-    // TODO: Реализовать полноценный рендеринг текста через FreeType
+#ifdef USE_FREETYPE
+    // Используем FreeType для рендеринга текста
+    if (g_fontRenderer) {
+        float scale = m_fontSize / 48.0f; // Нормализуем размер
+        g_fontRenderer->renderText(m_text, m_position.x, m_position.y, 
+                                   textColor * style->opacity, scale);
+    } else {
+        // Fallback на простые точки если FreeType не доступен
+        glColor4f(textColor.r, textColor.g, textColor.b, textColor.a * style->opacity);
+        glPointSize(style->fontSize * 0.5f);
+        glBegin(GL_POINTS);
+        for (size_t i = 0; i < m_text.length() && i < 20; i++) {
+            glVertex2f(m_position.x + i * style->fontSize * 0.6f, m_position.y);
+        }
+        glEnd();
+    }
+#else
+    // Fallback на простые точки если FreeType не доступен
+    glColor4f(textColor.r, textColor.g, textColor.b, textColor.a * style->opacity);
     glPointSize(style->fontSize * 0.5f);
     glBegin(GL_POINTS);
     for (size_t i = 0; i < m_text.length() && i < 20; i++) {
         glVertex2f(m_position.x + i * style->fontSize * 0.6f, m_position.y);
     }
     glEnd();
+#endif
     
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
     glMatrixMode(GL_MODELVIEW);
     glEnable(GL_DEPTH_TEST);
-    
-    // TODO: Реализовать полноценный рендеринг текста через FreeType
 #endif
 }
 

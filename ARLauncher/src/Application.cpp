@@ -21,6 +21,7 @@
 #include "Style.h"
 #include "LensEngineAPI.h"
 #include "ARLauncherAPI.h"
+#include "FontRenderer.h"
 
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
@@ -242,6 +243,23 @@ bool Application::initializeScene()
 
 bool Application::initializeUI()
 {
+    // Инициализируем FontRenderer для нормальных шрифтов
+#ifdef USE_FREETYPE
+    m_fontRenderer = std::make_unique<FontRenderer>();
+    if (m_fontRenderer->initialize()) {
+        // Пытаемся загрузить системный шрифт
+        if (!m_fontRenderer->loadFont("", 48)) {
+            std::cout << "Warning: Could not load system font, text rendering may be limited" << std::endl;
+        } else {
+            // Устанавливаем FontRenderer для всех Text элементов
+            Text::setGlobalFontRenderer(m_fontRenderer.get());
+            std::cout << "FontRenderer initialized successfully" << std::endl;
+        }
+    } else {
+        std::cout << "Warning: FontRenderer initialization failed, using simple glyphs" << std::endl;
+    }
+#endif
+    
     m_uiRenderer = std::make_unique<UIRenderer>(m_renderer.get());
     
     if (!m_uiRenderer->initialize()) {
@@ -259,32 +277,32 @@ bool Application::initializeUI()
     });
     m_uiRenderer->addElement(startButton);
     
-    // Виджет для отображения данных камеры
-    auto cameraInfoText = std::make_shared<Text>("📷 Camera: Waiting...");
+    // Виджет для отображения данных камеры (без эмодзи для правильного отображения)
+    auto cameraInfoText = std::make_shared<Text>("Camera: Waiting...");
     cameraInfoText->setPosition(glm::vec2(20.0f, 80.0f));
     cameraInfoText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(cameraInfoText);
     
     // Виджет для отображения позы
-    auto poseText = std::make_shared<Text>("📍 Position: (0, 0, 0)");
+    auto poseText = std::make_shared<Text>("Position: (0, 0, 0)");
     poseText->setPosition(glm::vec2(20.0f, 110.0f));
     poseText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(poseText);
     
     // Виджет для IMU данных
-    auto imuText = std::make_shared<Text>("⚡ IMU: No data");
+    auto imuText = std::make_shared<Text>("IMU: No data");
     imuText->setPosition(glm::vec2(20.0f, 140.0f));
     imuText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(imuText);
     
     // Виджет для статуса подключения iPhone
-    auto connectionText = std::make_shared<Text>("📡 iPhone: Disconnected");
+    auto connectionText = std::make_shared<Text>("iPhone: Disconnected");
     connectionText->setPosition(glm::vec2(20.0f, 170.0f));
     connectionText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(connectionText);
     
     // Кнопка подключения
-    auto connectButton = std::make_shared<Button>("🔌 Connect iPhone");
+    auto connectButton = std::make_shared<Button>("Connect iPhone");
     connectButton->setPosition(glm::vec2(20.0f, 200.0f));
     connectButton->setSize(glm::vec2(180.0f, 50.0f));
     connectButton->setStyle(std::make_shared<Style>(Style::createARButtonStyle()));
@@ -313,13 +331,9 @@ bool Application::initializeLensEngine()
         m_lastIMUUpdateTime = static_cast<float>(QDateTime::currentMSecsSinceEpoch()) / 1000.0f;
         m_positionInitialized = true;
         
-        // Логируем позицию из LensEngine
-        static int poseLogCounter = 0;
-        if (poseLogCounter++ % 60 == 0) {
-            std::cout << "[LensEngine] Camera Pose: "
-                      << "Pos: (" << std::fixed << std::setprecision(2)
-                      << pose.position.x << "," << pose.position.y << "," << pose.position.z << ") "
-                      << "Confidence: " << pose.confidence << std::endl;
+        // Немедленно обновляем камеру без интерполяции для отзывчивости
+        if (m_scene && m_scene->getCamera()) {
+            m_scene->updateCameraFromAR(pose.position, pose.rotation);
         }
     });
     
@@ -526,20 +540,28 @@ bool Application::initializeSensorConnector()
                                      imuData.magZ = magZ;
                                      
                                      m_lensEngine->processIMUData(imuData);
+                                 }
+                                 
+                                 // Логируем IMU данные и позицию из LensEngine каждые 60 кадров
+                                 if (imuLogCounter % 60 == 0) {
+                                     // Получаем текущую позицию из LensEngine
+                                     auto currentPose = m_lensEngine ? m_lensEngine->getCurrentCameraPose() : LensEngine::CameraPose();
                                      
-                                     // Логируем IMU данные и позицию из LensEngine
-                                     if (imuLogCounter % 60 == 0) {
-                                         // Получаем текущую позицию из LensEngine
-                                         auto currentPose = m_lensEngine->getCurrentCameraPose();
-                                         std::cout << "[IMU] 6DOF (Seq: " << data.sequenceNumber << "): "
-                                                   << "Pos: (" << std::fixed << std::setprecision(2)
-                                                   << currentPose.position.x << "," 
-                                                   << currentPose.position.y << "," 
-                                                   << currentPose.position.z << ") "
-                                                   << "Rot: (from LensEngine) "
-                                                   << "Accel:(" << accelX << "," << accelY << "," << accelZ << ") "
-                                                   << "Gyro:(" << gyroX << "," << gyroY << "," << gyroZ << ")" << std::endl;
-                                     }
+                                     // Вычисляем углы Эйлера из кватерниона для логирования
+                                     glm::vec3 euler = glm::eulerAngles(currentPose.rotation);
+                                     float pitchDeg = euler.x * 180.0f / 3.14159f;
+                                     float rollDeg = euler.y * 180.0f / 3.14159f;
+                                     float yawDeg = euler.z * 180.0f / 3.14159f;
+                                     
+                                     std::cout << "[IMU] 6DOF (Seq: " << data.sequenceNumber << "): "
+                                               << "Pos: (" << std::fixed << std::setprecision(2)
+                                               << currentPose.position.x << "," 
+                                               << currentPose.position.y << "," 
+                                               << currentPose.position.z << ") "
+                                               << "Rot: (P:" << pitchDeg << " deg R:" << rollDeg << " deg Y:" << yawDeg << " deg) "
+                                               << "Accel:(" << std::fixed << std::setprecision(2)
+                                               << accelX << "," << accelY << "," << accelZ << ") "
+                                               << "Gyro:(" << gyroX << "," << gyroY << "," << gyroZ << ")" << std::endl;
                                  }
                              }
                          }
@@ -565,18 +587,9 @@ void Application::update(float deltaTime)
     }
     
 #ifdef USE_SENSOR_CONNECTOR
-    // Плавная интерполяция камеры для непрерывного движения
-    if (m_positionInitialized && m_scene && m_scene->getCamera()) {
-        // Интерполируем позицию и ротацию для плавного движения
-        const float lerpSpeed = 15.0f; // Скорость интерполяции
-        float lerpFactor = std::min(1.0f, lerpSpeed * deltaTime);
-        
-        m_currentCameraPosition = glm::mix(m_currentCameraPosition, m_targetCameraPosition, lerpFactor);
-        m_currentCameraRotation = glm::slerp(m_currentCameraRotation, m_targetCameraRotation, lerpFactor);
-        
-        // Обновляем камеру с интерполированными значениями
-        m_scene->updateCameraFromAR(m_currentCameraPosition, m_currentCameraRotation);
-    }
+    // Плавная интерполяция камеры для непрерывного движения (если нет новых данных)
+    // Камера обновляется напрямую в колбэке для отзывчивости
+    // Интерполяция здесь не нужна, так как обновление происходит в колбэке
     
     // Обновляем splash анимацию даже если нет видео кадров
     if (m_splashActive && m_splashStartMs > 0) {
@@ -626,11 +639,10 @@ void Application::render()
     m_renderer->beginFrame();
     
     // ВАЖНО: Порядок рендеринга для AR:
-    // 1. Сначала рендерим видео фон с камеры iPhone (renderVideoBackground вызывается асинхронно через сигнал)
-    // 2. Затем рендерим 3D объекты поверх видео (AR наложение)
-    // 3. Наконец рендерим UI поверх всего
+    // 1. Сначала рендерим видео фон с камеры iPhone (сохраненная текстура)
+    m_renderer->renderStoredVideoBackground();
     
-    // Рендеринг 3D объектов поверх видео фона (AR наложение)
+    // 2. Затем рендерим 3D объекты поверх видео (AR наложение)
     // Применяем opacity для анимации
 #ifdef USE_SENSOR_CONNECTOR
     m_renderer->set3DObjectsOpacity(m_3dObjectsOpacity);

@@ -30,6 +30,7 @@ public:
     virtual void endFrame() = 0;
     
     virtual void renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height) = 0;
+    virtual void renderStoredVideoBackground() = 0; // Рендерит сохраненную видео текстуру
     virtual void render3DObjects(const std::vector<glm::mat4>& transforms, 
                                  const std::vector<uint32_t>& meshIds) = 0;
     
@@ -74,6 +75,7 @@ public:
     void endFrame() override;
     
     void renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height) override;
+    void renderStoredVideoBackground() override;
     void render3DObjects(const std::vector<glm::mat4>& transforms, 
                         const std::vector<uint32_t>& meshIds) override;
     
@@ -185,6 +187,7 @@ public:
     void endFrame() override;
     
     void renderVideoBackground(const uint8_t* data, uint32_t width, uint32_t height) override;
+    void renderStoredVideoBackground() override;
     void render3DObjects(const std::vector<glm::mat4>& transforms, 
                         const std::vector<uint32_t>& meshIds) override;
     

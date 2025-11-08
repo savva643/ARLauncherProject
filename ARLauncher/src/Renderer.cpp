@@ -298,7 +298,17 @@ inline const SimpleGlyph* _findGlyph(char c) {
         {'9', {" ### ","#   #","#   #"," ####","    #","#   #"," ### "}},
         {' ', {"     ","     ","     ","     ","     ","     ","     "}},
         {'-', {"     ","     ","     ","#####","     ","     ","     "}},
-        {':', {"     ","  #  ","     ","     ","     ","  #  ","     "}}
+        {':', {"     ","  #  ","     ","     ","     ","  #  ","     "}},
+        {'.', {"     ","     ","     ","     ","     ","  #  ","  #  "}},
+        {',', {"     ","     ","     ","     ","  #  ","  #  "," #   "}},
+        {'!', {"  #  ","  #  ","  #  ","  #  ","  #  ","     ","  #  "}},
+        {'?', {" ### ","#   #","   # ","  #  ","  #  ","     ","  #  "}},
+        {'I', {"#####","  #  ","  #  ","  #  ","  #  ","  #  ","#####"}},
+        {'F', {"#####","#    ","#    ","#####","#    ","#    ","#    "}},
+        {'J', {"#####","    #","    #","    #","    #","#   #"," ### "}},
+        {'K', {"#   #","#  # ","# #  ","##   ","# #  ","#  # ","#   #"}},
+        {'Q', {" ### ","#   #","#   #","#   #","#  ##","#   #"," ### "}},
+        {'X', {"#   #"," # # ","  #  ","  #  "," # # ","#   #","#   #"}}
     };
     for (const auto& glyph : glyphs) {
         if (glyph.character == c) return &glyph;
@@ -315,19 +325,21 @@ inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const
     if (!ctx || !string) return;
     std::string text(end ? std::string(string, end) : std::string(string));
     
-    // Обрабатываем UTF-8 строку, извлекая только ASCII символы и базовые UTF-8
+    // Обрабатываем UTF-8 строку - для простоты показываем ASCII и базовые символы
+    // Для полной поддержки нужна библиотека FreeType
     std::string processedText;
     for (size_t i = 0; i < text.length(); ) {
         unsigned char byte = static_cast<unsigned char>(text[i]);
         
-        // ASCII символ (0-127)
+        // ASCII символ (0-127) - оставляем как есть
         if (byte < 128) {
-            char ch = static_cast<char>(std::toupper(byte));
-            processedText += ch;
+            processedText += static_cast<char>(byte);
             i++;
         }
-        // UTF-8 последовательность - пропускаем для простоты, или заменяем на '?'
-        else if ((byte & 0xE0) == 0xC0) { // 2-byte sequence
+        // UTF-8 последовательность - для русских букв (Cyrillic) это 2-byte последовательности
+        else if ((byte & 0xE0) == 0xC0) { // 2-byte sequence (русские буквы)
+            // Пропускаем русские символы, так как у нас нет глифов для них
+            // В будущем нужно добавить поддержку через FreeType
             processedText += '?';
             i += 2;
         }
@@ -604,6 +616,7 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
         return;
     }
 
+    // Создаем или обновляем текстуру для видео (только обновление данных, без рендеринга)
     if (m_videoTexture == 0) {
         glGenTextures(1, &m_videoTexture);
         glBindTexture(GL_TEXTURE_2D, m_videoTexture);
@@ -613,17 +626,30 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         m_videoTextureWidth = width;
         m_videoTextureHeight = height;
-    }
-
-    glBindTexture(GL_TEXTURE_2D, m_videoTexture);
-    // Обновляем текстуру только если размер изменился
-    if (m_videoTextureWidth != width || m_videoTextureHeight != height) {
+        // Создаем текстуру с начальными данными
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
-        m_videoTextureWidth = width;
-        m_videoTextureHeight = height;
     } else {
-        // Используем glTexSubImage2D для обновления существующей текстуры (быстрее)
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
+        glBindTexture(GL_TEXTURE_2D, m_videoTexture);
+        // Обновляем текстуру только если размер изменился
+        if (m_videoTextureWidth != width || m_videoTextureHeight != height) {
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+            m_videoTextureWidth = width;
+            m_videoTextureHeight = height;
+        } else {
+            // Используем glTexSubImage2D для обновления существующей текстуры (быстрее, стрим)
+            glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
+        }
+    }
+    
+    // НЕ рендерим здесь - рендеринг будет в renderStoredVideoBackground()
+#endif
+}
+
+void OpenGLRenderer::renderStoredVideoBackground()
+{
+#ifdef USE_OPENGL
+    if (m_videoTexture == 0) {
+        return; // Нет видео текстуры
     }
 
     glDisable(GL_DEPTH_TEST);
@@ -956,13 +982,13 @@ uint32_t OpenGLRenderer::createMesh(const std::vector<float>& vertices,
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(uint32_t), indices.data(), GL_STATIC_DRAW);
 
-    // Позиция (location 0)
+    // Позиция (location 0) - формат: pos(3) + normal(3) + uv(2) = 8 floats
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)0);
 
     // Нормаль (location 1)
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void*)(3 * sizeof(float)));
 
     glBindVertexArray(0);
 
@@ -1569,9 +1595,11 @@ void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
     // Обновляем текстуру данными с камеры
     updateVideoTexture(data, width, height);
     
-    // TODO: Рендеринг полноэкранного квада с видео текстурой
-    // Для этого нужен graphics pipeline с шейдерами
-    // Пока текстура обновляется, но не отображается
+}
+
+void VulkanRenderer::renderStoredVideoBackground()
+{
+    // Для Vulkan видеофон копируется в swapchain в beginFrame
 }
 
 void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms, 

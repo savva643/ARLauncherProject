@@ -25,6 +25,39 @@ if(USE_OPENGL)
     endif()
 endif()
 
+# FreeType для рендеринга текста
+find_package(Freetype QUIET)
+if(NOT Freetype_FOUND)
+    find_package(PkgConfig QUIET)
+    if(PKG_CONFIG_FOUND)
+        pkg_check_modules(FREETYPE freetype2)
+    endif()
+    if(NOT FREETYPE_FOUND)
+        find_path(FREETYPE_INCLUDE_DIRS freetype/freetype.h
+            PATHS
+            /usr/include
+            /usr/local/include
+            /usr/include/freetype2
+            /usr/local/include/freetype2
+            C:/freetype/include
+        )
+        find_library(FREETYPE_LIBRARIES freetype
+            PATHS
+            /usr/lib
+            /usr/local/lib
+            C:/freetype/lib
+        )
+        if(FREETYPE_INCLUDE_DIRS AND FREETYPE_LIBRARIES)
+            set(FREETYPE_FOUND TRUE)
+            message(STATUS "Found FreeType at: ${FREETYPE_INCLUDE_DIRS}")
+        else()
+            message(WARNING "FreeType not found! Text rendering will be limited")
+            message(STATUS "Install FreeType: sudo apt-get install libfreetype6-dev (Linux)")
+            message(STATUS "Or: vcpkg install freetype:x64-windows (Windows)")
+        endif()
+    endif()
+endif()
+
 # GLFW для создания окна
 find_package(glfw3 QUIET)
 if(NOT glfw3_FOUND)
@@ -96,6 +129,7 @@ set(ARLAUNCHER_SOURCES
     src/Scene.cpp
     src/Camera.cpp
     src/ARLauncherAPI.cpp
+    src/FontRenderer.cpp
     ui/UIRenderer.cpp
     ui/UIElement.cpp
     ui/Window.cpp
@@ -111,6 +145,7 @@ set(ARLAUNCHER_HEADERS
     include/Scene.h
     include/Camera.h
     include/ARLauncherAPI.h
+    include/FontRenderer.h
     ui/UIRenderer.h
     ui/UIElement.h
     ui/Window.h
@@ -152,6 +187,20 @@ elseif(USE_OPENGL)
     target_link_libraries(ARLauncher PRIVATE ${OPENGL_LIBRARIES})
     target_include_directories(ARLauncher PRIVATE ${OPENGL_INCLUDE_DIRS})
     target_compile_definitions(ARLauncher PRIVATE USE_OPENGL)
+endif()
+
+# FreeType
+if(Freetype_FOUND)
+    target_link_libraries(ARLauncher PRIVATE Freetype::Freetype)
+    target_compile_definitions(ARLauncher PRIVATE USE_FREETYPE)
+    message(STATUS "FreeType linked via package")
+elseif(FREETYPE_FOUND)
+    target_link_libraries(ARLauncher PRIVATE ${FREETYPE_LIBRARIES})
+    target_include_directories(ARLauncher PRIVATE ${FREETYPE_INCLUDE_DIRS})
+    target_compile_definitions(ARLauncher PRIVATE USE_FREETYPE)
+    message(STATUS "FreeType linked manually")
+else()
+    message(WARNING "FreeType not found - text rendering will use simple glyphs")
 endif()
 
 if(LENSENGINE_LIB)
