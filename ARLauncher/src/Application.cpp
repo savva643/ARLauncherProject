@@ -49,6 +49,12 @@ Application::Application()
     , m_3dObjectsOpacity(0.0f)
     , m_uiOpacity(0.0f)
     , m_titleOpacity(0.0f)
+    , m_targetCameraPosition(0.0f)
+    , m_targetCameraRotation(1.0f, 0.0f, 0.0f, 0.0f)
+    , m_currentCameraPosition(0.0f)
+    , m_currentCameraRotation(1.0f, 0.0f, 0.0f, 0.0f)
+    , m_lastIMUUpdateTime(0.0f)
+    , m_positionInitialized(false)
 #endif
 {
 }
@@ -301,8 +307,19 @@ bool Application::initializeLensEngine()
     
     // Установка колбэков
     m_lensEngine->setPoseCallback([this](const LensEngine::CameraPose& pose) {
-        if (m_scene) {
-            m_scene->updateCameraFromAR(pose.position, pose.rotation);
+        // Обновляем целевую позицию и ротацию из LensEngine для интерполяции
+        m_targetCameraPosition = pose.position;
+        m_targetCameraRotation = pose.rotation;
+        m_lastIMUUpdateTime = static_cast<float>(QDateTime::currentMSecsSinceEpoch()) / 1000.0f;
+        m_positionInitialized = true;
+        
+        // Логируем позицию из LensEngine
+        static int poseLogCounter = 0;
+        if (poseLogCounter++ % 60 == 0) {
+            std::cout << "[LensEngine] Camera Pose: "
+                      << "Pos: (" << std::fixed << std::setprecision(2)
+                      << pose.position.x << "," << pose.position.y << "," << pose.position.z << ") "
+                      << "Confidence: " << pose.confidence << std::endl;
         }
     });
     
@@ -324,11 +341,12 @@ bool Application::initializeSensorConnector()
     
     // Инициализируем splash screen состояние
     m_splashActive = true;
-    m_splashStartMs = 0; // Будет установлено при первом кадре
+    m_splashStartMs = QDateTime::currentMSecsSinceEpoch(); // Запускаем сразу
     m_videoOpacity = 0.0f;
     m_3dObjectsOpacity = 0.0f;
     m_uiOpacity = 0.0f;
     m_titleOpacity = 0.0f;
+    m_positionInitialized = false;
     
     if (!m_sensorConnector->initialize()) {
         std::cerr << "Failed to initialize SensorConnector" << std::endl;
@@ -342,10 +360,7 @@ bool Application::initializeSensorConnector()
                             // Преобразуем QImage в RGB
                             QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
                             
-                            // Инициализируем splash start time при первом кадре
-                            if (m_splashStartMs == 0) {
-                                m_splashStartMs = QDateTime::currentMSecsSinceEpoch();
-                            }
+                            // Splash уже запущен при инициализации, но обновляем если нужно
 
                             // Splash анимация согласно требованиям:
                             // 0-3s: черный экран, появляются надписи "Spatial Home" (центр) и "GlaskiOS" (внизу)
@@ -437,6 +452,13 @@ bool Application::initializeSensorConnector()
                                  uint32_t height = static_cast<uint32_t>(rgbFrame.height());
                                  const uint8_t* rgbData = rgbFrame.constBits();
                                  
+                                 // Передаем RGB кадр в LensEngine для визуальной одометрии
+                                 if (m_lensEngine) {
+                                     uint64_t timestamp = QDateTime::currentMSecsSinceEpoch() * 1000; // в микросекундах
+                                     size_t dataSize = width * height * 3; // RGB
+                                     m_lensEngine->processRGBData(rgbData, dataSize, width, height, timestamp);
+                                 }
+                                 
                                  // Применяем opacity к видео через renderer
                                  m_renderer->setVideoOpacity(m_videoOpacity);
                                  
@@ -486,29 +508,40 @@ bool Application::initializeSensorConnector()
                                  memcpy(&magY, rawData + 88, 8);
                                  memcpy(&magZ, rawData + 96, 8);
                                  
-                                 std::cout << "[IMU] 6DOF (Seq: " << data.sequenceNumber << "): "
-                                           << "Pos: (0, 0, 0) "  // Позиция будет из AR tracking
-                                           << "Rot: (" << std::fixed << std::setprecision(2)
-                                           << "P:" << pitch * 180.0f / 3.14159f << " deg "
-                                           << "R:" << roll * 180.0f / 3.14159f << " deg "
-                                           << "Y:0 deg) "
-                                           << "Accel:(" << accelX << "," << accelY << "," << accelZ << ") "
-                                           << "Gyro:(" << gyroX << "," << gyroY << "," << gyroZ << ")" << std::endl;
-                                 
-                                 // Обновляем камеру из IMU данных
-                                 if (m_scene && m_scene->getCamera()) {
-                                     // Преобразуем pitch/roll в quaternion
-                                     glm::quat rotation = glm::angleAxis(roll, glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                                         glm::angleAxis(pitch, glm::vec3(1.0f, 0.0f, 0.0f));
-                                     m_scene->updateCameraFromAR(glm::vec3(0.0f, 0.0f, 0.0f), rotation);
+                                 // Передаем IMU данные в LensEngine для обработки
+                                 if (m_lensEngine) {
+                                     LensEngine::RawIMUData imuData;
+                                     imuData.timestamp = QDateTime::currentMSecsSinceEpoch() * 1000; // в микросекундах
+                                     imuData.accelX = accelX;
+                                     imuData.accelY = accelY;
+                                     imuData.accelZ = accelZ;
+                                     imuData.gyroX = gyroX;
+                                     imuData.gyroY = gyroY;
+                                     imuData.gyroZ = gyroZ;
+                                     imuData.gravityX = gravityX;
+                                     imuData.gravityY = gravityY;
+                                     imuData.gravityZ = gravityZ;
+                                     imuData.magX = magX;
+                                     imuData.magY = magY;
+                                     imuData.magZ = magZ;
+                                     
+                                     m_lensEngine->processIMUData(imuData);
+                                     
+                                     // Логируем IMU данные и позицию из LensEngine
+                                     if (imuLogCounter % 60 == 0) {
+                                         // Получаем текущую позицию из LensEngine
+                                         auto currentPose = m_lensEngine->getCurrentCameraPose();
+                                         std::cout << "[IMU] 6DOF (Seq: " << data.sequenceNumber << "): "
+                                                   << "Pos: (" << std::fixed << std::setprecision(2)
+                                                   << currentPose.position.x << "," 
+                                                   << currentPose.position.y << "," 
+                                                   << currentPose.position.z << ") "
+                                                   << "Rot: (from LensEngine) "
+                                                   << "Accel:(" << accelX << "," << accelY << "," << accelZ << ") "
+                                                   << "Gyro:(" << gyroX << "," << gyroY << "," << gyroZ << ")" << std::endl;
+                                     }
                                  }
                              }
-                         }
-                         
-                         // Передаем данные в LensEngine
-                         if (m_lensEngine) {
-                             // TODO: Преобразовать SensorData в формат LensEngine
-                             // m_lensEngine->processSensorData(data);
                          }
                      });
     
@@ -532,6 +565,19 @@ void Application::update(float deltaTime)
     }
     
 #ifdef USE_SENSOR_CONNECTOR
+    // Плавная интерполяция камеры для непрерывного движения
+    if (m_positionInitialized && m_scene && m_scene->getCamera()) {
+        // Интерполируем позицию и ротацию для плавного движения
+        const float lerpSpeed = 15.0f; // Скорость интерполяции
+        float lerpFactor = std::min(1.0f, lerpSpeed * deltaTime);
+        
+        m_currentCameraPosition = glm::mix(m_currentCameraPosition, m_targetCameraPosition, lerpFactor);
+        m_currentCameraRotation = glm::slerp(m_currentCameraRotation, m_targetCameraRotation, lerpFactor);
+        
+        // Обновляем камеру с интерполированными значениями
+        m_scene->updateCameraFromAR(m_currentCameraPosition, m_currentCameraRotation);
+    }
+    
     // Обновляем splash анимацию даже если нет видео кадров
     if (m_splashActive && m_splashStartMs > 0) {
         qint64 nowMs = QDateTime::currentMSecsSinceEpoch();

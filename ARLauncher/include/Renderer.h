@@ -234,6 +234,8 @@ private:
     void renderUIWindowContent(const UIWindow& window);
 
     uint32_t m_videoTexture;
+    uint32_t m_videoTextureWidth;
+    uint32_t m_videoTextureHeight;
     glm::mat4 m_viewMatrix;
     glm::mat4 m_projectionMatrix;
     float m_videoOpacity;

@@ -94,6 +94,14 @@ private:
     float m_3dObjectsOpacity = 0.0f;  // Opacity 3D объектов (0.0 - 1.0)
     float m_uiOpacity = 0.0f;          // Opacity UI элементов (0.0 - 1.0)
     float m_titleOpacity = 0.0f;       // Opacity надписей "Spatial Home" и "GlaskiOS" (0.0 - 1.0)
+    
+    // Camera interpolation for smooth movement
+    glm::vec3 m_targetCameraPosition;  // Целевая позиция из LensEngine
+    glm::quat m_targetCameraRotation;  // Целевая ротация из LensEngine
+    glm::vec3 m_currentCameraPosition; // Текущая интерполированная позиция
+    glm::quat m_currentCameraRotation; // Текущая интерполированная ротация
+    float m_lastIMUUpdateTime;
+    bool m_positionInitialized;
 #endif
 };
 

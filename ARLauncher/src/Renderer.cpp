@@ -306,17 +306,53 @@ inline const SimpleGlyph* _findGlyph(char c) {
     return nullptr;
 }
 
+// Простая функция для проверки UTF-8 символов
+inline bool isUTF8StartByte(unsigned char byte) {
+    return (byte & 0x80) == 0 || (byte & 0xE0) == 0xC0 || (byte & 0xF0) == 0xE0 || (byte & 0xF8) == 0xF0;
+}
+
 inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const char* end) {
     if (!ctx || !string) return;
     std::string text(end ? std::string(string, end) : std::string(string));
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char ch) {
-        return static_cast<char>(std::toupper(ch));
-    });
+    
+    // Обрабатываем UTF-8 строку, извлекая только ASCII символы и базовые UTF-8
+    std::string processedText;
+    for (size_t i = 0; i < text.length(); ) {
+        unsigned char byte = static_cast<unsigned char>(text[i]);
+        
+        // ASCII символ (0-127)
+        if (byte < 128) {
+            char ch = static_cast<char>(std::toupper(byte));
+            processedText += ch;
+            i++;
+        }
+        // UTF-8 последовательность - пропускаем для простоты, или заменяем на '?'
+        else if ((byte & 0xE0) == 0xC0) { // 2-byte sequence
+            processedText += '?';
+            i += 2;
+        }
+        else if ((byte & 0xF0) == 0xE0) { // 3-byte sequence
+            processedText += '?';
+            i += 3;
+        }
+        else if ((byte & 0xF8) == 0xF0) { // 4-byte sequence
+            processedText += '?';
+            i += 4;
+        }
+        else {
+            // Неизвестная последовательность, пропускаем
+            i++;
+        }
+    }
+    
     const float cellWidth = ctx->fontSize * 0.6f;
     const float cellHeight = ctx->fontSize;
     const float spacing = ctx->fontSize * 0.15f;
     float totalWidth = 0.0f;
-    for (char ch : text) totalWidth += cellWidth + spacing;
+    for (char ch : processedText) {
+        if (ch == ' ') totalWidth += cellWidth * 0.5f;
+        else totalWidth += cellWidth + spacing;
+    }
     float startX = x;
     float startY = y;
     if (ctx->textAlign & NVG_ALIGN_CENTER) startX -= totalWidth * 0.5f;
@@ -325,10 +361,23 @@ inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const
     else if (ctx->textAlign & NVG_ALIGN_BOTTOM) startY -= cellHeight;
     glColor4f(ctx->fillColor.r, ctx->fillColor.g, ctx->fillColor.b, ctx->fillColor.a);
     float penX = startX;
-    for (char ch : text) {
-        if (ch == ' ') { penX += cellWidth + spacing; continue; }
+    for (char ch : processedText) {
+        if (ch == ' ') { 
+            penX += cellWidth * 0.5f; 
+            continue; 
+        }
+        if (ch == '?') {
+            // Рисуем простой квадрат для неизвестных символов
+            const float blockSize = cellWidth * 0.8f;
+            _drawFilledRect(penX, startY, blockSize, blockSize, ctx->fillColor);
+            penX += cellWidth + spacing;
+            continue;
+        }
         const SimpleGlyph* glyph = _findGlyph(ch);
-        if (!glyph) { penX += cellWidth + spacing; continue; }
+        if (!glyph) { 
+            penX += cellWidth + spacing; 
+            continue; 
+        }
         const float blockSizeX = cellWidth / 5.0f;
         const float blockSizeY = cellHeight / 7.0f;
         for (int row = 0; row < 7; ++row) {
@@ -377,6 +426,8 @@ void Renderer::getWindowSize(int& width, int& height) const
 // OpenGL Renderer Implementation
 OpenGLRenderer::OpenGLRenderer()
     : m_videoTexture(0)
+    , m_videoTextureWidth(0)
+    , m_videoTextureHeight(0)
     , m_videoOpacity(1.0f)
     , m_3dObjectsOpacity(1.0f)
     , m_basicShaderProgram(0)
@@ -560,10 +611,20 @@ void OpenGLRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        m_videoTextureWidth = width;
+        m_videoTextureHeight = height;
     }
 
     glBindTexture(GL_TEXTURE_2D, m_videoTexture);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+    // Обновляем текстуру только если размер изменился
+    if (m_videoTextureWidth != width || m_videoTextureHeight != height) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data);
+        m_videoTextureWidth = width;
+        m_videoTextureHeight = height;
+    } else {
+        // Используем glTexSubImage2D для обновления существующей текстуры (быстрее)
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, data);
+    }
 
     glDisable(GL_DEPTH_TEST);
 

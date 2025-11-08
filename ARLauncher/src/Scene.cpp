@@ -167,7 +167,7 @@ void Scene::createDemoScene(Renderer* renderer)
         m_cubeMeshId = renderer->createMesh(kCubeVertices, kCubeIndices);
     }
     
-    // Создание демо-кубов
+    // Создание одного куба (квадрат)
     SceneObject cube1;
     cube1.position = glm::vec3(0.0f, 0.0f, -1.0f); // На 1 метр перед камерой
     cube1.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
@@ -176,77 +176,80 @@ void Scene::createDemoScene(Renderer* renderer)
     cube1.meshId = m_cubeMeshId;
     addObject(cube1);
     
-    SceneObject cube2;
-    cube2.position = glm::vec3(-0.5f, 0.0f, -1.0f);
-    cube2.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    cube2.scale = glm::vec3(0.15f);
-    cube2.visible = true;
-    cube2.meshId = m_cubeMeshId;
-    addObject(cube2);
-    
-    SceneObject cube3;
-    cube3.position = glm::vec3(0.5f, 0.0f, -1.0f);
-    cube3.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    cube3.scale = glm::vec3(0.15f);
-    cube3.visible = true;
-    cube3.meshId = m_cubeMeshId;
-    addObject(cube3);
-    
-    // Создаем простую сферу (икоcaэдр для упрощения)
+    // Создаем правильную сферу через параметрическое уравнение
     std::vector<float> sphereVertices;
     std::vector<uint32_t> sphereIndices;
     
-    // Простая сфера через икосаэдр (12 вершин, 20 треугольников)
-    const float t = (1.0f + std::sqrt(5.0f)) / 2.0f; // Золотое сечение
     const float radius = 0.5f;
+    const int segments = 32; // Количество сегментов для гладкой сферы
+    const int rings = 16;    // Количество колец
     
-    // Вершины икосаэдра
-    std::vector<glm::vec3> icosahedronVertices = {
-        glm::normalize(glm::vec3(-1, t, 0)) * radius,
-        glm::normalize(glm::vec3(1, t, 0)) * radius,
-        glm::normalize(glm::vec3(-1, -t, 0)) * radius,
-        glm::normalize(glm::vec3(1, -t, 0)) * radius,
-        glm::normalize(glm::vec3(0, -1, t)) * radius,
-        glm::normalize(glm::vec3(0, 1, t)) * radius,
-        glm::normalize(glm::vec3(0, -1, -t)) * radius,
-        glm::normalize(glm::vec3(0, 1, -t)) * radius,
-        glm::normalize(glm::vec3(t, 0, -1)) * radius,
-        glm::normalize(glm::vec3(t, 0, 1)) * radius,
-        glm::normalize(glm::vec3(-t, 0, -1)) * radius,
-        glm::normalize(glm::vec3(-t, 0, 1)) * radius,
-    };
-    
-    // Индексы для икосаэдра (упрощенная версия)
-    for (size_t i = 0; i < icosahedronVertices.size(); i++) {
-        const auto& v = icosahedronVertices[i];
-        glm::vec3 normal = glm::normalize(v / radius);
-        sphereVertices.push_back(v.x);
-        sphereVertices.push_back(v.y);
-        sphereVertices.push_back(v.z);
-        sphereVertices.push_back(normal.x);
-        sphereVertices.push_back(normal.y);
-        sphereVertices.push_back(normal.z);
-        sphereVertices.push_back(0.5f); // UV
-        sphereVertices.push_back(0.5f);
+    // Генерируем вершины сферы
+    for (int ring = 0; ring <= rings; ++ring) {
+        float theta = static_cast<float>(ring) * 3.14159f / static_cast<float>(rings);
+        float sinTheta = std::sin(theta);
+        float cosTheta = std::cos(theta);
+        
+        for (int seg = 0; seg <= segments; ++seg) {
+            float phi = static_cast<float>(seg) * 2.0f * 3.14159f / static_cast<float>(segments);
+            float sinPhi = std::sin(phi);
+            float cosPhi = std::cos(phi);
+            
+            glm::vec3 position(
+                radius * sinTheta * cosPhi,
+                radius * cosTheta,
+                radius * sinTheta * sinPhi
+            );
+            
+            glm::vec3 normal = glm::normalize(position);
+            
+            sphereVertices.push_back(position.x);
+            sphereVertices.push_back(position.y);
+            sphereVertices.push_back(position.z);
+            sphereVertices.push_back(normal.x);
+            sphereVertices.push_back(normal.y);
+            sphereVertices.push_back(normal.z);
+            sphereVertices.push_back(static_cast<float>(seg) / static_cast<float>(segments)); // U
+            sphereVertices.push_back(static_cast<float>(ring) / static_cast<float>(rings));    // V
+        }
     }
     
-    // Простые индексы (для демо используем простую сферу)
-    for (uint32_t i = 0; i < icosahedronVertices.size() - 2; i++) {
-        sphereIndices.push_back(0);
-        sphereIndices.push_back(i + 1);
-        sphereIndices.push_back(i + 2);
+    // Генерируем индексы для треугольников
+    for (int ring = 0; ring < rings; ++ring) {
+        for (int seg = 0; seg < segments; ++seg) {
+            int first = ring * (segments + 1) + seg;
+            int second = first + segments + 1;
+            
+            // Первый треугольник
+            sphereIndices.push_back(first);
+            sphereIndices.push_back(second);
+            sphereIndices.push_back(first + 1);
+            
+            // Второй треугольник
+            sphereIndices.push_back(second);
+            sphereIndices.push_back(second + 1);
+            sphereIndices.push_back(first + 1);
+        }
     }
     
     m_sphereMeshId = renderer->createMesh(sphereVertices, sphereIndices);
     
-    // Добавляем сферу в сцену
-    SceneObject sphere;
-    sphere.position = glm::vec3(0.0f, 0.3f, -1.5f); // Выше и дальше
-    sphere.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    sphere.scale = glm::vec3(0.15f);
-    sphere.visible = true;
-    sphere.meshId = m_sphereMeshId;
-    addObject(sphere);
+    // Добавляем две сферы (круга) в сцену
+    SceneObject sphere1;
+    sphere1.position = glm::vec3(-0.4f, 0.0f, -1.0f); // Слева
+    sphere1.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    sphere1.scale = glm::vec3(0.15f);
+    sphere1.visible = true;
+    sphere1.meshId = m_sphereMeshId;
+    addObject(sphere1);
+    
+    SceneObject sphere2;
+    sphere2.position = glm::vec3(0.4f, 0.0f, -1.0f); // Справа
+    sphere2.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    sphere2.scale = glm::vec3(0.15f);
+    sphere2.visible = true;
+    sphere2.meshId = m_sphereMeshId;
+    addObject(sphere2);
     
     std::cout << "[OK] Demo scene created: " << m_objects.size() << " objects" << std::endl;
 }
