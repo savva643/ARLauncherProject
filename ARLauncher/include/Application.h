@@ -4,6 +4,8 @@
 #include <memory>
 #include <string>
 #include <functional>
+#include <glm/glm.hpp>
+#include <glm/gtx/quaternion.hpp>
 
 // Forward declarations
 struct GLFWwindow;
