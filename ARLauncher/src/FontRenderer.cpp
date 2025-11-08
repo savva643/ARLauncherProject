@@ -229,12 +229,18 @@ void FontRenderer::renderText(const std::string& text, float x, float y,
         float h = glyph.height * scale;
         
         // Рендерим глиф
+        // FreeType хранит данные сверху вниз (0,0 вверху), OpenGL текстуры снизу вверх (0,0 внизу)
+        // Переворачиваем координаты текстуры по Y для правильного отображения
         glBindTexture(GL_TEXTURE_2D, glyph.textureId);
         glBegin(GL_QUADS);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos + h);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos + h);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos);
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos);
+        // Верхний левый угол -> верх текстуры (Y=0)
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(xpos, ypos);
+        // Верхний правый угол -> верх текстуры (Y=0)
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(xpos + w, ypos);
+        // Нижний правый угол -> низ текстуры (Y=1)
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(xpos + w, ypos + h);
+        // Нижний левый угол -> низ текстуры (Y=1)
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(xpos, ypos + h);
         glEnd();
         
         // Перемещаем курсор

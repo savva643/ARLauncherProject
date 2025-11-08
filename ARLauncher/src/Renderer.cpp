@@ -665,8 +665,31 @@ void OpenGLRenderer::renderStoredVideoBackground()
         glUseProgram(m_videoShaderProgram);
         GLint opacityLoc = glGetUniformLocation(m_videoShaderProgram, "opacity");
         GLint texLoc = glGetUniformLocation(m_videoShaderProgram, "videoTexture");
+        GLint videoAspectLoc = glGetUniformLocation(m_videoShaderProgram, "videoAspect");
+        GLint videoOffsetLoc = glGetUniformLocation(m_videoShaderProgram, "videoOffset");
+        
         if (opacityLoc >= 0) glUniform1f(opacityLoc, m_videoOpacity);
         if (texLoc >= 0) glUniform1i(texLoc, 0);
+        
+        // Вычисляем соотношение сторон для правильного отображения
+        float windowAspect = static_cast<float>(m_width) / static_cast<float>(m_height);
+        float videoAspect = (m_videoTextureWidth > 0 && m_videoTextureHeight > 0) 
+            ? static_cast<float>(m_videoTextureWidth) / static_cast<float>(m_videoTextureHeight) 
+            : windowAspect;
+        
+        float offsetX = 0.0f;
+        float offsetY = 0.0f;
+        
+        if (videoAspect > windowAspect) {
+            // Видео шире - подгоняем по ширине
+            offsetY = (1.0f - windowAspect / videoAspect) * 0.5f;
+        } else {
+            // Видео выше - подгоняем по высоте
+            offsetX = (1.0f - videoAspect / windowAspect) * 0.5f;
+        }
+        
+        if (videoAspectLoc >= 0) glUniform2f(videoAspectLoc, videoAspect, windowAspect);
+        if (videoOffsetLoc >= 0) glUniform2f(videoOffsetLoc, offsetX, offsetY);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, m_videoTexture);
@@ -714,11 +737,15 @@ void OpenGLRenderer::renderStoredVideoBackground()
         
         glBegin(GL_QUADS);
         // QImage имеет координаты сверху вниз (0,0 вверху), OpenGL текстуры снизу вверх (0,0 внизу)
-        // Поэтому нужно перевернуть координаты текстуры по Y
-        glTexCoord2f(0.0f, 1.0f); glVertex2f(offsetX, offsetY);
-        glTexCoord2f(1.0f, 1.0f); glVertex2f(offsetX + displayWidth, offsetY);
-        glTexCoord2f(1.0f, 0.0f); glVertex2f(offsetX + displayWidth, offsetY + displayHeight);
-        glTexCoord2f(0.0f, 0.0f); glVertex2f(offsetX, offsetY + displayHeight);
+        // Переворачиваем координаты текстуры по Y для правильного отображения
+        // Верхний левый угол экрана -> верх текстуры (Y=0)
+        glTexCoord2f(0.0f, 0.0f); glVertex2f(offsetX, offsetY);
+        // Верхний правый угол экрана -> верх текстуры (Y=0)
+        glTexCoord2f(1.0f, 0.0f); glVertex2f(offsetX + displayWidth, offsetY);
+        // Нижний правый угол экрана -> низ текстуры (Y=1)
+        glTexCoord2f(1.0f, 1.0f); glVertex2f(offsetX + displayWidth, offsetY + displayHeight);
+        // Нижний левый угол экрана -> низ текстуры (Y=1)
+        glTexCoord2f(0.0f, 1.0f); glVertex2f(offsetX, offsetY + displayHeight);
         glEnd();
         glDisable(GL_TEXTURE_2D);
         glPopMatrix();
@@ -1264,15 +1291,17 @@ void OpenGLRenderer::createFullscreenQuad()
 #ifdef USE_OPENGL
     if (m_fullscreenQuadVAO != 0) return;
 
+    // QImage хранит данные сверху вниз (0,0 вверху), OpenGL текстуры снизу вверх (0,0 внизу)
+    // Переворачиваем координаты текстуры по Y для правильного отображения
     const float vertices[] = {
-        // positions   // texCoords
-        -1.0f,  1.0f, 0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f,
-         1.0f, -1.0f, 1.0f, 0.0f,
+        // positions   // texCoords (перевернуты по Y)
+        -1.0f,  1.0f, 0.0f, 0.0f,  // Верхний левый: texCoord Y = 0 (верх текстуры)
+        -1.0f, -1.0f, 0.0f, 1.0f,  // Нижний левый: texCoord Y = 1 (низ текстуры)
+         1.0f, -1.0f, 1.0f, 1.0f,  // Нижний правый: texCoord Y = 1
 
-        -1.0f,  1.0f, 0.0f, 1.0f,
-         1.0f, -1.0f, 1.0f, 0.0f,
-         1.0f,  1.0f, 1.0f, 1.0f,
+        -1.0f,  1.0f, 0.0f, 0.0f,  // Верхний левый
+         1.0f, -1.0f, 1.0f, 1.0f,  // Нижний правый
+         1.0f,  1.0f, 1.0f, 0.0f,  // Верхний правый: texCoord Y = 0
     };
 
     glGenVertexArrays(1, &m_fullscreenQuadVAO);
