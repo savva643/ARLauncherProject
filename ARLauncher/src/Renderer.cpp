@@ -1,4 +1,5 @@
 #include "Renderer.h"
+#include "FontRenderer.h"
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -331,9 +332,24 @@ OpenGLRenderer::OpenGLRenderer()
     , m_nextMeshId(1)
     , m_nextUIWindowId(1)
     , m_simpleNVG(nullptr)
+    , m_fontRenderer(nullptr)
 {
     m_viewMatrix = glm::mat4(1.0f);
     m_projectionMatrix = glm::mat4(1.0f);
+    
+    // Инициализируем FontRenderer
+    m_fontRenderer = new FontRenderer();
+    if (m_fontRenderer) {
+        m_fontRenderer->initialize();
+        // Загружаем системный шрифт (если доступен)
+        // В Linux обычно: /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
+        // В Windows: C:/Windows/Fonts/arial.ttf
+        #ifdef _WIN32
+        m_fontRenderer->loadFont("C:/Windows/Fonts/arial.ttf", 48);
+        #else
+        m_fontRenderer->loadFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48);
+        #endif
+    }
 }
 
 OpenGLRenderer::~OpenGLRenderer()
@@ -469,6 +485,12 @@ void OpenGLRenderer::shutdown()
     if (m_simpleNVG) {
         nvgDeleteSimple(reinterpret_cast<NVGcontext*>(m_simpleNVG));
         m_simpleNVG = nullptr;
+    }
+    
+    if (m_fontRenderer) {
+        m_fontRenderer->cleanup();
+        delete m_fontRenderer;
+        m_fontRenderer = nullptr;
     }
 #endif
 }
@@ -1027,31 +1049,78 @@ void OpenGLRenderer::renderUIWindowContent(const UIWindow& window)
     nvgFillColor(nvg, nvgRGBAf(0.45f, 0.55f, 0.95f, 0.35f));
     nvgFill(nvg);
 
-    nvgFontSize(nvg, 42.0f);
-    nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
-    nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgText(nvg, 40.0f, 40.0f, window.title.c_str(), nullptr);
+    // Используем FontRenderer для нормального отображения текста вместо глифов
+    if (m_fontRenderer) {
+        // Настраиваем OpenGL для рендеринга текста
+        glDisable(GL_DEPTH_TEST);
+        glMatrixMode(GL_PROJECTION);
+        glPushMatrix();
+        glLoadIdentity();
+        glOrtho(0, window.pixelWidth, window.pixelHeight, 0, -1, 1);
+        glMatrixMode(GL_MODELVIEW);
+        glPushMatrix();
+        glLoadIdentity();
+        
+        // Рендерим заголовок
+        m_fontRenderer->renderText(window.title, 40.0f, 40.0f, 
+                                   glm::vec4(1.0f, 1.0f, 1.0f, 0.95f), 42.0f / 48.0f);
+        
+        // Рендерим подзаголовок
+        m_fontRenderer->renderText(window.subtitle, 40.0f, 100.0f, 
+                                   glm::vec4(0.85f, 0.88f, 0.95f, 0.85f), 26.0f / 48.0f);
+        
+        if (window.hasButton) {
+            float buttonWidth = static_cast<float>(window.pixelWidth) - 80.0f;
+            float buttonHeight = 70.0f;
+            float buttonX = 40.0f;
+            float buttonY = static_cast<float>(window.pixelHeight) - buttonHeight - 40.0f;
 
-    nvgFontSize(nvg, 26.0f);
-    nvgFillColor(nvg, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
-    nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgText(nvg, 40.0f, 100.0f, window.subtitle.c_str(), nullptr);
+            nvgBeginPath(nvg);
+            nvgRoundedRect(nvg, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
+            nvgFillColor(nvg, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
+            nvgFill(nvg);
 
-    if (window.hasButton) {
-        float buttonWidth = static_cast<float>(window.pixelWidth) - 80.0f;
-        float buttonHeight = 70.0f;
-        float buttonX = 40.0f;
-        float buttonY = static_cast<float>(window.pixelHeight) - buttonHeight - 40.0f;
-
-        nvgBeginPath(nvg);
-        nvgRoundedRect(nvg, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
-        nvgFillColor(nvg, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
-        nvgFill(nvg);
-
-        nvgFontSize(nvg, 30.0f);
+            // Рендерим текст кнопки по центру
+            glm::vec2 textSize = m_fontRenderer->getTextSize(window.buttonText);
+            float textX = buttonX + (buttonWidth - textSize.x * (30.0f / 48.0f)) * 0.5f;
+            float textY = buttonY + (buttonHeight - textSize.y * (30.0f / 48.0f)) * 0.5f;
+            m_fontRenderer->renderText(window.buttonText, textX, textY, 
+                                       glm::vec4(1.0f, 1.0f, 1.0f, 0.95f), 30.0f / 48.0f);
+        }
+        
+        glPopMatrix();
+        glMatrixMode(GL_PROJECTION);
+        glPopMatrix();
+        glMatrixMode(GL_MODELVIEW);
+        glEnable(GL_DEPTH_TEST);
+    } else {
+        // Fallback на старый способ если FontRenderer недоступен
+        nvgFontSize(nvg, 42.0f);
         nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
-        nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-        nvgText(nvg, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, window.buttonText.c_str(), nullptr);
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        nvgText(nvg, 40.0f, 40.0f, window.title.c_str(), nullptr);
+
+        nvgFontSize(nvg, 26.0f);
+        nvgFillColor(nvg, nvgRGBAf(0.85f, 0.88f, 0.95f, 0.85f));
+        nvgTextAlign(nvg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+        nvgText(nvg, 40.0f, 100.0f, window.subtitle.c_str(), nullptr);
+
+        if (window.hasButton) {
+            float buttonWidth = static_cast<float>(window.pixelWidth) - 80.0f;
+            float buttonHeight = 70.0f;
+            float buttonX = 40.0f;
+            float buttonY = static_cast<float>(window.pixelHeight) - buttonHeight - 40.0f;
+
+            nvgBeginPath(nvg);
+            nvgRoundedRect(nvg, buttonX, buttonY, buttonWidth, buttonHeight, 18.0f);
+            nvgFillColor(nvg, nvgRGBAf(0.35f, 0.55f, 0.95f, 0.65f));
+            nvgFill(nvg);
+
+            nvgFontSize(nvg, 30.0f);
+            nvgFillColor(nvg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.95f));
+            nvgTextAlign(nvg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+            nvgText(nvg, buttonX + buttonWidth * 0.5f, buttonY + buttonHeight * 0.5f, window.buttonText.c_str(), nullptr);
+        }
     }
 
     nvgEndFrame(nvg);

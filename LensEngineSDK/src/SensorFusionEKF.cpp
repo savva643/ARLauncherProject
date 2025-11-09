@@ -180,6 +180,8 @@ void SensorFusionEKF::predictSimple(double dt, const RawIMUData &imu)
     }
 
     // Интегрируем акселерометр для позиции
+    // ВАЖНО: Позиция из акселерометра накапливает ошибки, поэтому используем только для краткосрочного трекинга
+    // Для долгосрочного трекинга нужна визуальная одометрия
     glm::vec3 acceleration(imu.accelX, imu.accelY, imu.accelZ);
     glm::vec3 velocity = stateToVelocity();
     glm::vec3 position = stateToPosition();
@@ -191,7 +193,23 @@ void SensorFusionEKF::predictSimple(double dt, const RawIMUData &imu)
     
     // Обновляем скорость и позицию
     velocity += linearAccel * static_cast<float>(dt);
+    
+    // Ограничиваем скорость для предотвращения накопления ошибок
+    float maxVelocity = 10.0f; // м/с
+    if (glm::length(velocity) > maxVelocity) {
+        velocity = glm::normalize(velocity) * maxVelocity;
+    }
+    
     position += velocity * static_cast<float>(dt);
+    
+    // Ограничиваем позицию для предотвращения огромных значений
+    // Если позиция слишком большая, сбрасываем её (возможно, устройство не двигалось)
+    float maxPosition = 100.0f; // метры
+    if (glm::length(position) > maxPosition) {
+        // Сбрасываем позицию, если она слишком большая (вероятно, накопление ошибок)
+        position = glm::vec3(0.0f);
+        velocity = glm::vec3(0.0f);
+    }
     
     // Сохраняем в состояние
     m_state[0] = position.x;

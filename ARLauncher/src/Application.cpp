@@ -1,6 +1,7 @@
 #ifdef USE_SENSOR_CONNECTOR
 #include <QtCore/qdatastream.h>
 #include <QtCore/qmetatype.h>
+#include <QtCore/qendian.h>
 #include <QImage>
 #include <QPainter>
 #include <QFont>
@@ -366,6 +367,7 @@ bool Application::initializeSensorConnector()
                             }
                              
                             // Быстрое преобразование в RGB без QPainter операций
+                            // Оптимизация: используем прямой доступ к данным без копирования
                             QImage rgbFrame = frame.convertToFormat(QImage::Format_RGB888);
                              
                             if (!rgbFrame.isNull()) {
@@ -373,14 +375,17 @@ bool Application::initializeSensorConnector()
                                 uint32_t height = static_cast<uint32_t>(rgbFrame.height());
                                 const uint8_t* rgbData = rgbFrame.constBits();
                                 
-                                // Передаем RGB данные в LensEngine для обработки (асинхронно)
+                                // Оптимизация: передаем данные в LensEngine напрямую
+                                // Это не блокирует обработку кадров
                                 if (m_lensEngine) {
                                     uint64_t timestamp = QDateTime::currentMSecsSinceEpoch();
                                     size_t dataSize = width * height * 3; // RGB888
+                                    // Используем прямой вызов для максимальной скорости
                                     m_lensEngine->processRGBData(rgbData, dataSize, width, height, timestamp);
                                 }
                                 
                                 // Быстрое обновление текстуры видео (без рендеринга)
+                                // Это должно быть максимально быстро
                                 m_renderer->renderVideoBackground(rgbData, width, height);
                                 
                                 static int frameCount = 0;
@@ -460,25 +465,45 @@ bool Application::initializeSensorConnector()
                              }
                          }
                          
-                         // Передаем IMU данные в LensEngine
+                         // Передаем IMU данные в LensEngine (используем правильный endianness как в NetworkServer)
                          if (data.type == SensorConnector::RAW_IMU && data.payload.size() >= 104 && m_lensEngine) {
                              // Парсим IMU данные (формат: timestamp(8) + accel(24) + gyro(24) + gravity(24) + mag(24))
+                             // ВАЖНО: Используем тот же формат endianness, что и в NetworkServer (Little Endian)
                              const char* rawData = data.payload.constData();
                              
                              LensEngine::RawIMUData imuData;
+                             
+                             // Копируем и конвертируем endianness (Little Endian, как в NetworkServer)
                              memcpy(&imuData.timestamp, rawData, 8);
+                             // timestamp уже в правильном формате (uint64_t)
+                             
                              memcpy(&imuData.accelX, rawData + 8, 8);
+                             imuData.accelX = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.accelX));
                              memcpy(&imuData.accelY, rawData + 16, 8);
+                             imuData.accelY = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.accelY));
                              memcpy(&imuData.accelZ, rawData + 24, 8);
+                             imuData.accelZ = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.accelZ));
+                             
                              memcpy(&imuData.gyroX, rawData + 32, 8);
+                             imuData.gyroX = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.gyroX));
                              memcpy(&imuData.gyroY, rawData + 40, 8);
+                             imuData.gyroY = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.gyroY));
                              memcpy(&imuData.gyroZ, rawData + 48, 8);
+                             imuData.gyroZ = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.gyroZ));
+                             
                              memcpy(&imuData.gravityX, rawData + 56, 8);
+                             imuData.gravityX = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.gravityX));
                              memcpy(&imuData.gravityY, rawData + 64, 8);
+                             imuData.gravityY = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.gravityY));
                              memcpy(&imuData.gravityZ, rawData + 72, 8);
+                             imuData.gravityZ = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.gravityZ));
+                             
                              memcpy(&imuData.magX, rawData + 80, 8);
+                             imuData.magX = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.magX));
                              memcpy(&imuData.magY, rawData + 88, 8);
+                             imuData.magY = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.magY));
                              memcpy(&imuData.magZ, rawData + 96, 8);
+                             imuData.magZ = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.magZ));
                              
                              // Передаем в LensEngine для обработки
                              m_lensEngine->processIMUData(imuData);

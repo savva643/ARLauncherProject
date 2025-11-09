@@ -270,6 +270,9 @@ private:
     uint32_t m_nextUIWindowId;
 
     void* m_simpleNVG; // NVGcontext* (определен в Renderer.cpp)
+    
+    // FontRenderer для нормального отображения текста
+    class FontRenderer* m_fontRenderer;
 };
 
 // Factory function
