@@ -13,6 +13,7 @@
 #endif
 
 #include "Application.h"
+#include "LiDARVisualizer.h"
 #include "Renderer.h"
 #include "Scene.h"
 #include "Camera.h"
@@ -206,8 +207,11 @@ bool Application::initializeWindow()
 
 bool Application::initializeRenderer()
 {
-    // Всегда используем OpenGL для стабильной работы
+#ifdef USE_VULKAN
+    m_renderer = createRenderer(true); // Используем Vulkan
+#else
     m_renderer = createRenderer(false); // Используем OpenGL
+#endif
     
     if (!m_renderer) {
         std::cerr << "Failed to create renderer" << std::endl;
@@ -215,7 +219,11 @@ bool Application::initializeRenderer()
     }
     
     if (!m_renderer->initialize(m_window)) {
+#ifdef USE_VULKAN
+        std::cerr << "Failed to initialize renderer (Vulkan context issue?)" << std::endl;
+#else
         std::cerr << "Failed to initialize renderer (OpenGL context issue?)" << std::endl;
+#endif
         return false;
     }
     
@@ -506,9 +514,46 @@ bool Application::initializeSensorConnector()
                              imuData.magZ = qFromLittleEndian<double>(reinterpret_cast<const uchar*>(&imuData.magZ));
                              
                              // Передаем в LensEngine для обработки
-                             m_lensEngine->processIMUData(imuData);
-                         }
-                     });
+                              m_lensEngine->processIMUData(imuData);
+                          }
+                          
+                          // LiDAR depth data
+                          if (data.type == SensorConnector::LIDAR_DEPTH && !data.payload.isEmpty() && m_lensEngine) {
+                              if (data.payload.size() >= 12) {
+                                  quint32 w = 0, h = 0;
+                                  memcpy(&w, data.payload.constData(), 4);
+                                  memcpy(&h, data.payload.constData() + 4, 4);
+                                  if (w > 0 && h > 0 && w < 1024 && h < 1024) {
+                                      const uint8_t* depthBytes = reinterpret_cast<const uint8_t*>(data.payload.constData() + 12);
+                                      size_t depthSize = data.payload.size() - 12;
+                                      if (depthSize >= w * h * 4) {
+                                          // Save depth map periodically for alignment verification
+                                          static int depthSaveCounter = 0;
+                                          if (depthSaveCounter++ % 30 == 0) {
+                                              const float* depthValues = reinterpret_cast<const float*>(depthBytes);
+                                              QImage depthImg(w, h, QImage::Format_RGB888);
+                                              for (quint32 y = 0; y < h; y++) {
+                                                  for (quint32 x = 0; x < w; x++) {
+                                                      float d = depthValues[y * w + x];
+                                                      if (d < 0.1f || d > 3.0f || std::isnan(d)) {
+                                                          depthImg.setPixelColor(x, y, QColor(0, 0, 0));
+                                                      } else {
+                                                          float t = (d - 0.1f) / 2.9f;
+                                                          depthImg.setPixelColor(x, y, QColor(
+                                                              (int)(t * 255), (int)((1-fabs(t*2-1))*255), (int)((1-t)*255)));
+                                                      }
+                                                  }
+                                              }
+                                              depthImg.save("/tmp/depth_map.png");
+                                              std::cout << "[DEPTH] Saved depth map " << w << "x" << h << std::endl;
+                                          }
+                                          uint64_t timestamp = QDateTime::currentMSecsSinceEpoch();
+                                          m_lensEngine->processLidarData(depthBytes, w * h * 4, nullptr, 0, timestamp);
+                                      }
+                                  }
+                              }
+                          }
+                      });
     
     // Запускаем серверы на порту 9000 (TCP и UDP)
     m_sensorConnector->startServers(9000, 9000);

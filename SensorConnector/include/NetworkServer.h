@@ -20,6 +20,7 @@
 #include "ARCameraController.h"
 #include "ardataprocessor.h"
 #include "lensenginetypes.h"
+#include "DebugVisualizer.h"
 
 class NetworkServer : public QObject
 {
@@ -122,6 +123,7 @@ private slots:
     void processRawIMUData(const QByteArray &data, quint64 sequenceNumber);
     void processRawLidarPointCloud(const QByteArray &data, quint64 sequenceNumber);
     void processLidarConfidenceMap(const QByteArray &data, quint64 sequenceNumber);
+    void processDeviceOrientation(const QByteArray &data, quint64 sequenceNumber);
 
     // 🔹 ОБРАБОТЧИКИ ОТ ARDataProcessor
     void onFrameProcessed(const LensEngine::ARFrame &processedFrame);
@@ -166,6 +168,9 @@ private:
     bool isLikelyJpegData(const QByteArray &data);
     void createErrorFrame(const QByteArray &data, const QString &error);
     quint64 findBestLidarMatch(quint64 rgbSequence);
+    
+    // 🔹 DEBUG VISUALIZATION
+    void generateAndDisplayDebugPanel();
 
     // Серверы и сокеты
     QTcpServer *tcpServer;
@@ -209,6 +214,20 @@ private:
 
     quint64 lastRgbSequence = 0;
     quint64 lastLidarSequence = 0;
+
+    // 🔹 CAMERA INTRINSICS (from iPhone calibration)
+    struct CameraIntrinsics {
+        double fx_rgb = 1312.0, fy_rgb = 1312.0, cx_rgb = 960.0, cy_rgb = 540.0;
+        double fx_lidar = 119.5, fy_lidar = 119.5, cx_lidar = 128.0, cy_lidar = 96.0;
+    } m_cameraIntrinsics;
+    
+    // 🔹 DEBUG PANEL
+    QImage m_debugPanel;
+    glm::quat m_lastRotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    glm::vec3 m_lastPosition = glm::vec3(0.0f);
+    std::vector<glm::vec3> m_lastLidarPoints;
+    float m_lastGyroX = 0.0f, m_lastGyroY = 0.0f, m_lastGyroZ = 0.0f;
+    float m_lastAccelX = 0.0f, m_lastAccelY = 0.0f, m_lastAccelZ = 0.0f;
 
     // 🔹 ТАЙМЕРЫ
     QTimer *displayTimer;

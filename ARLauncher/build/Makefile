@@ -187,6 +187,30 @@ LensEngineSDK/fast:
 	$(MAKE) $(MAKESILENT) -f LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build.make LensEngineSDK/CMakeFiles/LensEngineSDK.dir/build
 .PHONY : LensEngineSDK/fast
 
+src/ARLauncherAPI.o: src/ARLauncherAPI.cpp.o
+.PHONY : src/ARLauncherAPI.o
+
+# target to build an object file
+src/ARLauncherAPI.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o
+.PHONY : src/ARLauncherAPI.cpp.o
+
+src/ARLauncherAPI.i: src/ARLauncherAPI.cpp.i
+.PHONY : src/ARLauncherAPI.i
+
+# target to preprocess a source file
+src/ARLauncherAPI.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.i
+.PHONY : src/ARLauncherAPI.cpp.i
+
+src/ARLauncherAPI.s: src/ARLauncherAPI.cpp.s
+.PHONY : src/ARLauncherAPI.s
+
+# target to generate assembly for a file
+src/ARLauncherAPI.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.s
+.PHONY : src/ARLauncherAPI.cpp.s
+
 src/Application.o: src/Application.cpp.o
 .PHONY : src/Application.o
 
@@ -234,6 +258,30 @@ src/Camera.s: src/Camera.cpp.s
 src/Camera.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/Camera.cpp.s
 .PHONY : src/Camera.cpp.s
+
+src/FontRenderer.o: src/FontRenderer.cpp.o
+.PHONY : src/FontRenderer.o
+
+# target to build an object file
+src/FontRenderer.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o
+.PHONY : src/FontRenderer.cpp.o
+
+src/FontRenderer.i: src/FontRenderer.cpp.i
+.PHONY : src/FontRenderer.i
+
+# target to preprocess a source file
+src/FontRenderer.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.i
+.PHONY : src/FontRenderer.cpp.i
+
+src/FontRenderer.s: src/FontRenderer.cpp.s
+.PHONY : src/FontRenderer.s
+
+# target to generate assembly for a file
+src/FontRenderer.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/ARLauncher.dir/build.make CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.s
+.PHONY : src/FontRenderer.cpp.s
 
 src/Renderer.o: src/Renderer.cpp.o
 .PHONY : src/Renderer.o
@@ -489,12 +537,18 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... ARLauncher"
 	@echo "... LensEngineSDK"
+	@echo "... src/ARLauncherAPI.o"
+	@echo "... src/ARLauncherAPI.i"
+	@echo "... src/ARLauncherAPI.s"
 	@echo "... src/Application.o"
 	@echo "... src/Application.i"
 	@echo "... src/Application.s"
 	@echo "... src/Camera.o"
 	@echo "... src/Camera.i"
 	@echo "... src/Camera.s"
+	@echo "... src/FontRenderer.o"
+	@echo "... src/FontRenderer.i"
+	@echo "... src/FontRenderer.s"
 	@echo "... src/Renderer.o"
 	@echo "... src/Renderer.i"
 	@echo "... src/Renderer.s"

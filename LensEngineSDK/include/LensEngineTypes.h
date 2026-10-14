@@ -26,10 +26,12 @@ struct RawIMUData {
     double gyroX, gyroY, gyroZ;       // Гироскоп (rad/s)
     double gravityX, gravityY, gravityZ; // Гравитация (нормализованный)
     double magX, magY, magZ;          // Магнитометр (μT)
+    double pitch, yaw, roll;          // Euler angles from CMDeviceMotion (rad)
+    bool hasEuler;                     // Есть ли euler angles
     
     RawIMUData() : timestamp(0), accelX(0), accelY(0), accelZ(0),
         gyroX(0), gyroY(0), gyroZ(0), gravityX(0), gravityY(0), gravityZ(0),
-        magX(0), magY(0), magZ(0) {}
+        magX(0), magY(0), magZ(0), pitch(0), yaw(0), roll(0), hasEuler(false) {}
 };
 
 // Feature Point

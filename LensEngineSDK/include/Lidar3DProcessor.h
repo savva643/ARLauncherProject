@@ -2,11 +2,14 @@
 #define LIDAR3DPROCESSOR_H
 
 #include "LensEngineTypes.h"
-#include <vector>
-#include <mutex>
-#include <atomic>
 #include <memory>
+#include <vector>
 #include <functional>
+#include <atomic>
+#include <mutex>
+#include <glm/glm.hpp>
+#include "PlaneDetector.h"
+#include "MeshGenerator.h"
 
 namespace LensEngine {
 
@@ -37,6 +40,9 @@ public:
     // Получение результатов
     SpatialAnalysisResult getLastAnalysis() const;
     std::vector<glm::vec3> getLastProcessedPoints() const;
+    
+    // Mesh generation
+    Mesh generateEnvironmentMesh(float voxelSize = 0.05f, float maxEdgeLength = 0.2f);
 
     // Управление
     void stopProcessing();
@@ -75,7 +81,7 @@ private:
     // Утилиты
     std::vector<glm::vec3> filterValidPoints(const std::vector<glm::vec3> &points);
     std::vector<glm::vec3> removeOutliers(const std::vector<glm::vec3> &points);
-    glm::vec3 depthToWorldSpace(int x, int y, float depth);
+    glm::vec3 depthToWorldSpace(int x, int y, float depth, int width = 256, int height = 192);
     float pointToPlaneDistance(const glm::vec3 &point, const glm::vec3 &planeNormal, const glm::vec3 &planePoint);
 
     // Данные
@@ -93,6 +99,12 @@ private:
 
     // Асинхронная обработка
     std::atomic<bool> m_cancelProcessing;
+    
+    // Plane detector
+    std::unique_ptr<PlaneDetector> m_planeDetector;
+    
+    // Mesh generator
+    std::unique_ptr<MeshGenerator> m_meshGenerator;
     
     // Колбэки
     AnalysisCallback m_analysisCallback;

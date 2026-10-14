@@ -1,8 +1,12 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o"
+  "CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o.d"
   "CMakeFiles/ARLauncher.dir/src/Application.cpp.o"
   "CMakeFiles/ARLauncher.dir/src/Application.cpp.o.d"
   "CMakeFiles/ARLauncher.dir/src/Camera.cpp.o"
   "CMakeFiles/ARLauncher.dir/src/Camera.cpp.o.d"
+  "CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o"
+  "CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o.d"
   "CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o"
   "CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o.d"
   "CMakeFiles/ARLauncher.dir/src/Scene.cpp.o"

@@ -6,5 +6,5 @@ CXX_DEFINES =
 
 CXX_INCLUDES = -I/home/savva/Documents/ARLauncherProject/LensEngineSDK/include -I/home/savva/Documents/ARLauncherProject/LensEngineSDK/src
 
-CXX_FLAGS = -std=gnu++17
+CXX_FLAGS = -O3 -DNDEBUG -std=gnu++17
 

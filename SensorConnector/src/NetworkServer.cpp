@@ -1,5 +1,6 @@
 #include "NetworkServer.h"
 #include "ffmpegdecoder.h"
+#include <cmath>
 #include <QBuffer>
 #include <QImageReader>
 #include <QDebug>
@@ -490,6 +491,14 @@ void NetworkServer::processTcpData() {
             processLidarConfidenceMap(payload, sequenceNumber);
             break;
 
+        case 0x0A: // 🔹 Device Orientation
+            processDeviceOrientation(payload, sequenceNumber);
+            break;
+
+        case 0x10: // 🔹 Camera Intrinsics
+            processCameraIntrinsics(payload, sequenceNumber);
+            break;
+
         default:
             qWarning() << "❌ Unknown data type:" << dataType;
                 break;
@@ -534,6 +543,10 @@ void NetworkServer::processUdpData() {
 
             case 0x09: // 🔹 LiDAR Confidence Map
                     processLidarConfidenceMap(payload, sequenceNumber);
+                    break;
+
+            case 0x0A: // 🔹 Device Orientation
+                    processDeviceOrientation(payload, sequenceNumber);
                     break;
 
             default:
@@ -832,33 +845,58 @@ void NetworkServer::processLidarDepthData(const QByteArray &data, quint64 sequen
         qDebug() << "🎯 [LIDAR] processLidarDepthData START - Size:" << data.size() << "Seq:" << sequenceNumber;
     }
 
-                // 🔹 1. МГНОВЕННАЯ 2D ВИЗУАЛИЗАЦИЯ
-                processLidarFrame(data, sequenceNumber);
+    // 🔹 ПРОВЕРКА ДАННЫХ
+    if (data.isEmpty() || data.size() < 8) {
+        qWarning() << "❌ [LIDAR] Invalid data size:" << data.size();
+        return;
+    }
+
+    // 🔹 1. МГНОВЕННАЯ 2D ВИЗУАЛИЗАЦИЯ
+    processLidarFrame(data, sequenceNumber);
 
     // 🔹 2. ТЯЖЕЛАЯ 3D ОБРАБОТКА - В ОТДЕЛЬНОМ ПОТОКЕ LIDAR
+    if (!m_lidar3DProcessor) {
+        qWarning() << "❌ [LIDAR] m_lidar3DProcessor is null";
+        return;
+    }
+
     QMetaObject::invokeMethod(m_lidar3DProcessor, [this, data, sequenceNumber]() {
-            auto points3D = m_lidar3DProcessor->processDepthDataFast(data);
+        if (!m_lidar3DProcessor) {
+            qWarning() << "❌ [LIDAR] m_lidar3DProcessor became null in thread";
+            return;
+        }
 
-            // 🔹 ОБНОВЛЕНИЕ РЕЗУЛЬТАТОВ В ОСНОВНОМ ПОТОКЕ
-            QMetaObject::invokeMethod(this, [this, points3D, data, sequenceNumber]() {
-                    // 🔹 СОЗДАЕМ ОТДЕЛЬНЫЙ ARFrame ДЛЯ LiDAR ДАННЫХ
-                    LensEngine::ARFrame lidarFrame;
-                    lidarFrame.lidar.points3D = points3D;
-                    lidarFrame.lidar.depthMap = data;
-                    lidarFrame.lidar.sequenceNumber = sequenceNumber;
-                    lidarFrame.lidar.timestamp = QDateTime::currentMSecsSinceEpoch();
-                    lidarFrame.sequenceNumber = sequenceNumber;
-                    lidarFrame.timestamp = QDateTime::currentMSecsSinceEpoch();
+        auto points3D = m_lidar3DProcessor->processDepthDataFast(data);
 
-                    // 🔹 ЗАПУСКАЕМ AR ОБРАБОТКУ ДЛЯ LiDAR ДАННЫХ
-                    QtConcurrent::run(arThreadPool, [this, lidarFrame]() {
+        // 🔹 ОБНОВЛЕНИЕ РЕЗУЛЬТАТОВ В ОСНОВНОМ ПОТОКЕ
+        QMetaObject::invokeMethod(this, [this, points3D, data, sequenceNumber]() {
+            if (!m_arDataProcessor) {
+                qWarning() << "❌ [LIDAR] m_arDataProcessor is null";
+                return;
+            }
+
+            // 🔹 СОЗДАЕМ ОТДЕЛЬНЫЙ ARFrame ДЛЯ LiDAR ДАННЫХ
+            LensEngine::ARFrame lidarFrame;
+            lidarFrame.lidar.points3D = points3D;
+            lidarFrame.lidar.depthMap = data;
+            lidarFrame.lidar.sequenceNumber = sequenceNumber;
+            lidarFrame.lidar.timestamp = QDateTime::currentMSecsSinceEpoch();
+            lidarFrame.sequenceNumber = sequenceNumber;
+            lidarFrame.timestamp = QDateTime::currentMSecsSinceEpoch();
+
+            // 🔹 ЗАПУСКАЕМ AR ОБРАБОТКУ ДЛЯ LiDAR ДАННЫХ
+            if (arThreadPool) {
+                QtConcurrent::run(arThreadPool, [this, lidarFrame]() {
+                    if (m_arDataProcessor) {
                         m_arDataProcessor->processFrameAsync(lidarFrame);
-                    });
+                    }
+                });
+            }
 
-                    // 🔹 СИГНАЛ ДЛЯ QML
-                    emit lidarDataUpdated(points3D);
-                }, Qt::QueuedConnection);
+            // 🔹 СИГНАЛ ДЛЯ QML
+            emit lidarDataUpdated(points3D);
         }, Qt::QueuedConnection);
+    }, Qt::QueuedConnection);
 }
 
 
@@ -918,6 +956,14 @@ void NetworkServer::processRawIMUData(const QByteArray &data, quint64 sequenceNu
                  << QString::number(imuData.gyroZ, 'f', 3) << ")";
     }
 
+    // 🔹 СОХРАНЯЕМ ДЛЯ DEBUG ПАНЕЛИ
+    m_lastGyroX = imuData.gyroX;
+    m_lastGyroY = imuData.gyroY;
+    m_lastGyroZ = imuData.gyroZ;
+    m_lastAccelX = imuData.accelX;
+    m_lastAccelY = imuData.accelY;
+    m_lastAccelZ = imuData.accelZ;
+
     // 🔹 СРАЗУ В СЕНСОРНЫЙ ФЬЮЖН (самое важное!)
     if (m_arDataProcessor) {
         QMetaObject::invokeMethod(m_arDataProcessor, [this, imuData]() {
@@ -972,11 +1018,37 @@ void NetworkServer::processLidarConfidenceMap(const QByteArray &data, quint64 se
     });
 }
 
+void NetworkServer::processDeviceOrientation(const QByteArray &data, quint64 sequenceNumber)
+{
+    emit rawDataReceived(SensorConnector::DEVICE_ORIENTATION, data, sequenceNumber);
+}
+
 // 🔹 ОБРАБОТЧИКИ ОТ ARDataProcessor
 void NetworkServer::onFrameProcessed(const LensEngine::ARFrame &processedFrame)
 {
     qDebug() << "🎯 Full AR frame processed - Features:" << processedFrame.featurePoints.size()
              << "Pose confidence:" << processedFrame.cameraPose.confidence;
+
+    // 🔹 СОХРАНЯЕМ ДЛЯ DEBUG ПАНЕЛИ
+    m_lastRotation = processedFrame.cameraPose.rotation;
+    m_lastPosition = processedFrame.cameraPose.position;
+    
+    // Сохраняем LiDAR точки если есть
+    if (!processedFrame.lidar.pointCloud.isEmpty()) {
+        // Парсим point cloud (каждая точка 3 float = 12 bytes)
+        const float* points = reinterpret_cast<const float*>(processedFrame.lidar.pointCloud.constData());
+        int numPoints = processedFrame.lidar.pointCloud.size() / 12;
+        m_lastLidarPoints.clear();
+        for (int i = 0; i < numPoints; ++i) {
+            m_lastLidarPoints.push_back(glm::vec3(points[i*3], points[i*3+1], points[i*3+2]));
+        }
+    }
+    
+    // Генерируем debug панель каждые 30 кадров
+    static int frameCounter = 0;
+    if (frameCounter++ % 30 == 0) {
+        generateAndDisplayDebugPanel();
+    }
 
     // 🔹 СИГНАЛ ДЛЯ ВНЕШНИХ КОМПОНЕНТОВ
     emit arFrameProcessed(processedFrame);
@@ -1079,38 +1151,49 @@ void NetworkServer::handleUsbLidarConfidenceMap(const QByteArray &data, quint64 
 
 void NetworkServer::processLidarFrame(const QByteArray &data, quint64 sequenceNumber)
 {
-    // 🔹 УПРОЩЕННАЯ ОБРАБОТКА ДЛЯ 2D ВИЗУАЛИЗАЦИИ (не блокирует)
+    if (data.isEmpty() || data.size() < static_cast<int>(sizeof(float))) {
+        qWarning() << "❌ Invalid LiDAR data size:" << data.size();
+        return;
+    }
+
     const float* depthData = reinterpret_cast<const float*>(data.constData());
     int dataSize = data.size() / sizeof(float);
 
-    // Быстрое создание изображения глубины
-    QImage depthImage(256, 192, QImage::Format_Grayscale8);
+    // Определяем разрешение из размера (типичные: 256x192=49152, 320x240=76800)
+    int width = 256, height = 192;
+    if (dataSize == 256 * 192) { width = 256; height = 192; }
+    else if (dataSize == 320 * 240) { width = 320; height = 240; }
+    else if (dataSize == 240 * 180) { width = 240; height = 180; }
+    else {
+        height = static_cast<int>(std::sqrt(dataSize));
+        width = dataSize / height;
+        if (width * height != dataSize) { width = 256; height = 192; }
+    }
 
-    // 🔹 БЫСТРЫЙ ПОИСК МАКСИМАЛЬНОЙ ГЛУБИНЫ
+    QImage depthImage(width, height, QImage::Format_Grayscale8);
+    depthImage.fill(0);
+
     float maxDepth = 0.0f;
-    for (int i = 0; i < qMin(dataSize, 256*192); ++i) {
+    for (int i = 0; i < dataSize; ++i) {
         if (depthData[i] > maxDepth && depthData[i] < 10.0f)
             maxDepth = depthData[i];
     }
     if (maxDepth < 0.1f) maxDepth = 1.0f;
-
     float scale = 255.0f / maxDepth;
 
-    // 🔹 БЫСТРОЕ ПРЕОБРАЗОВАНИЕ
-    for (int y = 0; y < 192; ++y) {
+    for (int y = 0; y < height; ++y) {
         uchar* scanline = depthImage.scanLine(y);
-        for (int x = 0; x < 256; ++x) {
-            int idx = y * 256 + x;
+        for (int x = 0; x < width; ++x) {
+            int idx = y * width + x;
             if (idx < dataSize) {
-                        float depth = depthData[idx];
-                        scanline[x] = (depth > 0 && depth < 10.0f)
-                                          ? static_cast<uchar>(depth * scale)
-                                          : 0;
+                float depth = depthData[idx];
+                scanline[x] = (depth > 0 && depth < 10.0f)
+                                  ? static_cast<uchar>(qMin(depth * scale, 255.0f))
+                                  : 0;
             }
         }
     }
 
-    // 🔹 СОХРАНЯЕМ ДЛЯ ОТОБРАЖЕНИЯ
     lidarFrameBuffer[sequenceNumber] = depthImage;
     lidarFrameTimestamps[sequenceNumber] = QDateTime::currentMSecsSinceEpoch();
 
@@ -1171,6 +1254,62 @@ void NetworkServer::onFloorDetected(const QVector3D &normal, float height)
     qDebug() << "📐 Floor detected - Height:" << height << "Normal:" << normal;
 
     // Можно добавить логику обработки пола
+}
+
+// 🔹 ОБРАБОТКА CAMERA INTRINSICS (0x10)
+void NetworkServer::processCameraIntrinsics(const QByteArray &data, quint64 sequenceNumber)
+{
+    if (data.size() < 64) {
+        qWarning() << "❌ Invalid intrinsics data size:" << data.size();
+        return;
+    }
+
+    // Parse 8 doubles (64 bytes)
+    const double* values = reinterpret_cast<const double*>(data.constData());
+    
+    m_cameraIntrinsics.fx_rgb = values[0];
+    m_cameraIntrinsics.fy_rgb = values[1];
+    m_cameraIntrinsics.cx_rgb = values[2];
+    m_cameraIntrinsics.cy_rgb = values[3];
+    m_cameraIntrinsics.fx_lidar = values[4];
+    m_cameraIntrinsics.fy_lidar = values[5];
+    m_cameraIntrinsics.cx_lidar = values[6];
+    m_cameraIntrinsics.cy_lidar = values[7];
+
+    qDebug() << "📷 Camera Intrinsics Received:";
+    qDebug() << "   RGB: fx=" << m_cameraIntrinsics.fx_rgb << "fy=" << m_cameraIntrinsics.fy_rgb
+             << "cx=" << m_cameraIntrinsics.cx_rgb << "cy=" << m_cameraIntrinsics.cy_rgb;
+    qDebug() << "   LiDAR: fx=" << m_cameraIntrinsics.fx_lidar << "fy=" << m_cameraIntrinsics.fy_lidar
+             << "cx=" << m_cameraIntrinsics.cx_lidar << "cy=" << m_cameraIntrinsics.cy_lidar;
+
+    // Pass to ARDataProcessor
+    if (m_arDataProcessor) {
+        m_arDataProcessor->setCameraIntrinsics(
+            m_cameraIntrinsics.fx_rgb, m_cameraIntrinsics.fy_rgb,
+            m_cameraIntrinsics.cx_rgb, m_cameraIntrinsics.cy_rgb
+        );
+    }
+}
+
+// 🔹 GENERATE DEBUG PANEL
+void NetworkServer::generateAndDisplayDebugPanel()
+{
+    m_debugPanel = DebugVisualizer::visualizeDebugPanel(
+        m_lastRotation,
+        m_lastPosition,
+        m_lastLidarPoints,
+        m_lastGyroX, m_lastGyroY, m_lastGyroZ,
+        m_lastAccelX, m_lastAccelY, m_lastAccelZ,
+        1024, 768
+    );
+    
+    // Сохраняем для отладки
+    static int debugCounter = 0;
+    if (debugCounter++ % 30 == 0) {
+        QString debugPath = QString("debug_panel_%1.png").arg(debugCounter);
+        m_debugPanel.save(debugPath);
+        qDebug() << "💾 Debug panel saved:" << debugPath;
+    }
 }
 
 void NetworkServer::onObstaclesDetected(const QVector<QVector3D> &obstacles)

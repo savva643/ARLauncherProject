@@ -21,9 +21,10 @@ struct SceneObject {
     glm::vec3 scale;
     uint32_t textureId;
     bool visible;
+    float boundingRadius; // Радиус ограничивающей сферы для frustum culling
     
     SceneObject() : id(0), meshId(0), position(0.0f), rotation(1.0f, 0, 0, 0), 
-                    scale(1.0f), textureId(0), visible(true) {}
+                    scale(1.0f), textureId(0), visible(true), boundingRadius(0.5f) {}
 };
 
 /**
@@ -58,6 +59,9 @@ public:
     
     // Синхронизация с реальной камерой
     void updateCameraFromAR(const glm::vec3& position, const glm::quat& rotation);
+    
+    // Frustum culling для occlusion
+    void updateFrustumCulling();
 
 private:
     std::unique_ptr<Camera> m_camera;
@@ -67,7 +71,7 @@ private:
     // Демо-объекты
     uint32_t m_cubeMeshId;
     uint32_t m_sphereMeshId;
+    uint32_t m_torusMeshId;
 };
 
 #endif // SCENE_H
-

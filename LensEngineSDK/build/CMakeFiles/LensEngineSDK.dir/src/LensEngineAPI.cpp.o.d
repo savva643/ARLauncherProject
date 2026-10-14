@@ -1,8 +1,8 @@
 CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/LensEngineAPI.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineAPI.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineAPI.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \
@@ -324,9 +324,9 @@ CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: \
  /usr/include/c++/13/bits/algorithmfwd.h \
  /usr/include/c++/13/bits/stl_heap.h \
  /usr/include/c++/13/bits/uniform_int_dist.h /usr/include/c++/13/cstdlib \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngine.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineAPI.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/SensorFusionEKF.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngine.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineAPI.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/SensorFusionEKF.h \
  /usr/include/c++/13/mutex /usr/include/c++/13/bits/chrono.h \
  /usr/include/c++/13/ratio /usr/include/c++/13/ctime \
  /usr/include/c++/13/bits/parse_numbers.h \
@@ -338,10 +338,10 @@ CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: \
  /usr/include/x86_64-linux-gnu/bits/types/error_t.h \
  /usr/include/c++/13/bits/std_mutex.h \
  /usr/include/c++/13/bits/unique_lock.h /usr/include/c++/13/chrono \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/ARDataProcessor.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/Lidar3DProcessor.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/ARDataProcessor.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/Lidar3DProcessor.h \
  /usr/include/c++/13/atomic \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/CameraController.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/CameraController.h \
  /usr/include/c++/13/future /usr/include/c++/13/condition_variable \
  /usr/include/c++/13/bits/cxxabi_forced.h \
  /usr/include/c++/13/system_error /usr/include/c++/13/stdexcept \
@@ -363,7 +363,7 @@ CMakeFiles/LensEngineSDK.dir/src/LensEngineAPI.cpp.o: \
  /usr/include/c++/13/bits/basic_string.tcc \
  /usr/include/c++/13/bits/atomic_futex.h \
  /usr/include/c++/13/bits/std_thread.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/SpatialMappingSystem.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/SpatialMappingSystem.h \
  /usr/include/c++/13/map /usr/include/c++/13/bits/stl_tree.h \
  /usr/include/c++/13/bits/stl_map.h \
  /usr/include/c++/13/bits/stl_multimap.h

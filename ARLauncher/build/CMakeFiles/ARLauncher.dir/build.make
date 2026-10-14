@@ -139,10 +139,38 @@ CMakeFiles/ARLauncher.dir/src/Camera.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ARLauncher.dir/src/Camera.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/ARLauncher/src/Camera.cpp -o CMakeFiles/ARLauncher.dir/src/Camera.cpp.s
 
+CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
+CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/src/ARLauncherAPI.cpp
+CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o -MF CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o.d -o CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/src/ARLauncherAPI.cpp
+
+CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/ARLauncher/src/ARLauncherAPI.cpp > CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.i
+
+CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/ARLauncher/src/ARLauncherAPI.cpp -o CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.s
+
+CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
+CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/src/FontRenderer.cpp
+CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o -MF CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o.d -o CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/src/FontRenderer.cpp
+
+CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/savva/Documents/ARLauncherProject/ARLauncher/src/FontRenderer.cpp > CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.i
+
+CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/savva/Documents/ARLauncherProject/ARLauncher/src/FontRenderer.cpp -o CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.s
+
 CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIRenderer.cpp
 CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIRenderer.cpp
 
 CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.i: cmake_force
@@ -156,7 +184,7 @@ CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.s: cmake_force
 CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIElement.cpp
 CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building CXX object CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/UIElement.cpp
 
 CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.i: cmake_force
@@ -170,7 +198,7 @@ CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.s: cmake_force
 CMakeFiles/ARLauncher.dir/ui/Window.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/Window.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Window.cpp
 CMakeFiles/ARLauncher.dir/ui/Window.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Window.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Window.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/Window.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/Window.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/Window.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Window.cpp
 
 CMakeFiles/ARLauncher.dir/ui/Window.cpp.i: cmake_force
@@ -184,7 +212,7 @@ CMakeFiles/ARLauncher.dir/ui/Window.cpp.s: cmake_force
 CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Widget.cpp
 CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/Widget.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Widget.cpp
 
 CMakeFiles/ARLauncher.dir/ui/Widget.cpp.i: cmake_force
@@ -198,7 +226,7 @@ CMakeFiles/ARLauncher.dir/ui/Widget.cpp.s: cmake_force
 CMakeFiles/ARLauncher.dir/ui/Button.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/Button.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Button.cpp
 CMakeFiles/ARLauncher.dir/ui/Button.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Button.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Button.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/Button.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/Button.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/Button.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Button.cpp
 
 CMakeFiles/ARLauncher.dir/ui/Button.cpp.i: cmake_force
@@ -212,7 +240,7 @@ CMakeFiles/ARLauncher.dir/ui/Button.cpp.s: cmake_force
 CMakeFiles/ARLauncher.dir/ui/Text.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/Text.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Text.cpp
 CMakeFiles/ARLauncher.dir/ui/Text.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Text.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Text.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/Text.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/Text.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/Text.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Text.cpp
 
 CMakeFiles/ARLauncher.dir/ui/Text.cpp.i: cmake_force
@@ -226,7 +254,7 @@ CMakeFiles/ARLauncher.dir/ui/Text.cpp.s: cmake_force
 CMakeFiles/ARLauncher.dir/ui/Input.cpp.o: CMakeFiles/ARLauncher.dir/flags.make
 CMakeFiles/ARLauncher.dir/ui/Input.cpp.o: /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Input.cpp
 CMakeFiles/ARLauncher.dir/ui/Input.cpp.o: CMakeFiles/ARLauncher.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Input.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Building CXX object CMakeFiles/ARLauncher.dir/ui/Input.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/ARLauncher.dir/ui/Input.cpp.o -MF CMakeFiles/ARLauncher.dir/ui/Input.cpp.o.d -o CMakeFiles/ARLauncher.dir/ui/Input.cpp.o -c /home/savva/Documents/ARLauncherProject/ARLauncher/ui/Input.cpp
 
 CMakeFiles/ARLauncher.dir/ui/Input.cpp.i: cmake_force
@@ -244,6 +272,8 @@ ARLauncher_OBJECTS = \
 "CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o" \
 "CMakeFiles/ARLauncher.dir/src/Scene.cpp.o" \
 "CMakeFiles/ARLauncher.dir/src/Camera.cpp.o" \
+"CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o" \
+"CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o" \
 "CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o" \
 "CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o" \
 "CMakeFiles/ARLauncher.dir/ui/Window.cpp.o" \
@@ -260,6 +290,8 @@ bin/ARLauncher: CMakeFiles/ARLauncher.dir/src/Application.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/src/Scene.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/src/Camera.cpp.o
+bin/ARLauncher: CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o
+bin/ARLauncher: CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/ui/UIRenderer.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/ui/UIElement.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/ui/Window.cpp.o
@@ -269,16 +301,12 @@ bin/ARLauncher: CMakeFiles/ARLauncher.dir/ui/Text.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/ui/Input.cpp.o
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/build.make
 bin/ARLauncher: /usr/lib/x86_64-linux-gnu/libglfw.so.3.3
-bin/ARLauncher: /usr/lib/x86_64-linux-gnu/libvulkan.so
-bin/ARLauncher: lib/libLensEngineSDK.a
-bin/ARLauncher: /home/savva/Documents/ARLauncherProject/ARLauncher/../SensorConnector/lib/libSensorConnector.a
-bin/ARLauncher: /home/savva/Qt/6.5.3/gcc_64/lib/libQt6Network.so.6.5.3
-bin/ARLauncher: /home/savva/Qt/6.5.3/gcc_64/lib/libQt6Gui.so.6.5.3
-bin/ARLauncher: /home/savva/Qt/6.5.3/gcc_64/lib/libQt6Core.so.6.5.3
-bin/ARLauncher: /usr/lib/x86_64-linux-gnu/libGLX.so
 bin/ARLauncher: /usr/lib/x86_64-linux-gnu/libOpenGL.so
+bin/ARLauncher: /usr/lib/x86_64-linux-gnu/libGLX.so
+bin/ARLauncher: /usr/lib/x86_64-linux-gnu/libfreetype.so
+bin/ARLauncher: lib/libLensEngineSDK.a
 bin/ARLauncher: CMakeFiles/ARLauncher.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Linking CXX executable bin/ARLauncher"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/savva/Documents/ARLauncherProject/ARLauncher/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_15) "Linking CXX executable bin/ARLauncher"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/ARLauncher.dir/link.txt --verbose=$(VERBOSE)
 
 # Rule to build all files generated by this target.

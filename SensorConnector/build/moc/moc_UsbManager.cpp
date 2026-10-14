@@ -51,6 +51,7 @@ static constexpr auto qt_meta_stringdata_CLASSUsbManagerENDCLASS = QtMocHelpers:
     "usbSensorDataReceived",
     "usbRawLidarPointCloudReceived",
     "usbLidarConfidenceMapReceived",
+    "usbOrientationDataReceived",
     "sendUsbData",
     "handleUsbConnection",
     "handleUsbDisconnection",
@@ -62,7 +63,7 @@ static constexpr auto qt_meta_stringdata_CLASSUsbManagerENDCLASS = QtMocHelpers:
 );
 #else  // !QT_MOC_HAS_STRING_DATA
 struct qt_meta_stringdata_CLASSUsbManagerENDCLASS_t {
-    uint offsetsAndSizes[42];
+    uint offsetsAndSizes[44];
     char stringdata0[11];
     char stringdata1[19];
     char stringdata2[1];
@@ -76,14 +77,15 @@ struct qt_meta_stringdata_CLASSUsbManagerENDCLASS_t {
     char stringdata10[22];
     char stringdata11[30];
     char stringdata12[30];
-    char stringdata13[12];
-    char stringdata14[20];
-    char stringdata15[23];
-    char stringdata16[15];
-    char stringdata17[19];
-    char stringdata18[20];
-    char stringdata19[27];
-    char stringdata20[9];
+    char stringdata13[27];
+    char stringdata14[12];
+    char stringdata15[20];
+    char stringdata16[23];
+    char stringdata17[15];
+    char stringdata18[19];
+    char stringdata19[20];
+    char stringdata20[27];
+    char stringdata21[9];
 };
 #define QT_MOC_LITERAL(ofs, len) \
     uint(sizeof(qt_meta_stringdata_CLASSUsbManagerENDCLASS_t::offsetsAndSizes) + ofs), len 
@@ -102,14 +104,15 @@ Q_CONSTINIT static const qt_meta_stringdata_CLASSUsbManagerENDCLASS_t qt_meta_st
         QT_MOC_LITERAL(134, 21),  // "usbSensorDataReceived"
         QT_MOC_LITERAL(156, 29),  // "usbRawLidarPointCloudReceived"
         QT_MOC_LITERAL(186, 29),  // "usbLidarConfidenceMapReceived"
-        QT_MOC_LITERAL(216, 11),  // "sendUsbData"
-        QT_MOC_LITERAL(228, 19),  // "handleUsbConnection"
-        QT_MOC_LITERAL(248, 22),  // "handleUsbDisconnection"
-        QT_MOC_LITERAL(271, 14),  // "processUsbData"
-        QT_MOC_LITERAL(286, 18),  // "checkUsbConnection"
-        QT_MOC_LITERAL(305, 19),  // "handleNetworkStatus"
-        QT_MOC_LITERAL(325, 26),  // "handleUsbInterfaceDetected"
-        QT_MOC_LITERAL(352, 8)   // "detected"
+        QT_MOC_LITERAL(216, 26),  // "usbOrientationDataReceived"
+        QT_MOC_LITERAL(243, 11),  // "sendUsbData"
+        QT_MOC_LITERAL(255, 19),  // "handleUsbConnection"
+        QT_MOC_LITERAL(275, 22),  // "handleUsbDisconnection"
+        QT_MOC_LITERAL(298, 14),  // "processUsbData"
+        QT_MOC_LITERAL(313, 18),  // "checkUsbConnection"
+        QT_MOC_LITERAL(332, 19),  // "handleNetworkStatus"
+        QT_MOC_LITERAL(352, 26),  // "handleUsbInterfaceDetected"
+        QT_MOC_LITERAL(379, 8)   // "detected"
     },
     "UsbManager",
     "usbClientConnected",
@@ -124,6 +127,7 @@ Q_CONSTINIT static const qt_meta_stringdata_CLASSUsbManagerENDCLASS_t qt_meta_st
     "usbSensorDataReceived",
     "usbRawLidarPointCloudReceived",
     "usbLidarConfidenceMapReceived",
+    "usbOrientationDataReceived",
     "sendUsbData",
     "handleUsbConnection",
     "handleUsbDisconnection",
@@ -143,36 +147,38 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSUsbManagerENDCLASS[] = {
       11,       // revision
        0,       // classname
        0,    0, // classinfo
-      15,   14, // methods
+      16,   14, // methods
        0,    0, // properties
        0,    0, // enums/sets
        0,    0, // constructors
        0,       // flags
-       8,       // signalCount
+       9,       // signalCount
 
  // signals: name, argc, parameters, tag, flags, initial metatype offsets
-       1,    0,  104,    2, 0x06,    1 /* Public */,
-       3,    0,  105,    2, 0x06,    2 /* Public */,
-       4,    1,  106,    2, 0x06,    3 /* Public */,
-       6,    2,  109,    2, 0x06,    5 /* Public */,
-       9,    2,  114,    2, 0x06,    8 /* Public */,
-      10,    2,  119,    2, 0x06,   11 /* Public */,
-      11,    2,  124,    2, 0x06,   14 /* Public */,
-      12,    2,  129,    2, 0x06,   17 /* Public */,
+       1,    0,  110,    2, 0x06,    1 /* Public */,
+       3,    0,  111,    2, 0x06,    2 /* Public */,
+       4,    1,  112,    2, 0x06,    3 /* Public */,
+       6,    2,  115,    2, 0x06,    5 /* Public */,
+       9,    2,  120,    2, 0x06,    8 /* Public */,
+      10,    2,  125,    2, 0x06,   11 /* Public */,
+      11,    2,  130,    2, 0x06,   14 /* Public */,
+      12,    2,  135,    2, 0x06,   17 /* Public */,
+      13,    2,  140,    2, 0x06,   20 /* Public */,
 
  // slots: name, argc, parameters, tag, flags, initial metatype offsets
-      13,    1,  134,    2, 0x0a,   20 /* Public */,
-      14,    0,  137,    2, 0x08,   22 /* Private */,
-      15,    0,  138,    2, 0x08,   23 /* Private */,
-      16,    0,  139,    2, 0x08,   24 /* Private */,
-      17,    0,  140,    2, 0x08,   25 /* Private */,
-      18,    1,  141,    2, 0x08,   26 /* Private */,
-      19,    1,  144,    2, 0x08,   28 /* Private */,
+      14,    1,  145,    2, 0x0a,   23 /* Public */,
+      15,    0,  148,    2, 0x08,   25 /* Private */,
+      16,    0,  149,    2, 0x08,   26 /* Private */,
+      17,    0,  150,    2, 0x08,   27 /* Private */,
+      18,    0,  151,    2, 0x08,   28 /* Private */,
+      19,    1,  152,    2, 0x08,   29 /* Private */,
+      20,    1,  155,    2, 0x08,   31 /* Private */,
 
  // signals: parameters
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void, QMetaType::QString,    5,
+    QMetaType::Void, QMetaType::QByteArray, QMetaType::ULongLong,    7,    8,
     QMetaType::Void, QMetaType::QByteArray, QMetaType::ULongLong,    7,    8,
     QMetaType::Void, QMetaType::QByteArray, QMetaType::ULongLong,    7,    8,
     QMetaType::Void, QMetaType::QByteArray, QMetaType::ULongLong,    7,    8,
@@ -186,7 +192,7 @@ Q_CONSTINIT static const uint qt_meta_data_CLASSUsbManagerENDCLASS[] = {
     QMetaType::Void,
     QMetaType::Void,
     QMetaType::Void, QMetaType::QString,    5,
-    QMetaType::Void, QMetaType::Bool,   20,
+    QMetaType::Void, QMetaType::Bool,   21,
 
        0        // eod
 };
@@ -227,6 +233,10 @@ Q_CONSTINIT const QMetaObject UsbManager::staticMetaObject = { {
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QByteArray &, std::false_type>,
         QtPrivate::TypeAndForceComplete<quint64, std::false_type>,
+        // method 'usbOrientationDataReceived'
+        QtPrivate::TypeAndForceComplete<void, std::false_type>,
+        QtPrivate::TypeAndForceComplete<const QByteArray &, std::false_type>,
+        QtPrivate::TypeAndForceComplete<quint64, std::false_type>,
         // method 'sendUsbData'
         QtPrivate::TypeAndForceComplete<void, std::false_type>,
         QtPrivate::TypeAndForceComplete<const QByteArray &, std::false_type>,
@@ -262,13 +272,14 @@ void UsbManager::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
         case 5: _t->usbSensorDataReceived((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint64>>(_a[2]))); break;
         case 6: _t->usbRawLidarPointCloudReceived((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint64>>(_a[2]))); break;
         case 7: _t->usbLidarConfidenceMapReceived((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint64>>(_a[2]))); break;
-        case 8: _t->sendUsbData((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
-        case 9: _t->handleUsbConnection(); break;
-        case 10: _t->handleUsbDisconnection(); break;
-        case 11: _t->processUsbData(); break;
-        case 12: _t->checkUsbConnection(); break;
-        case 13: _t->handleNetworkStatus((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
-        case 14: _t->handleUsbInterfaceDetected((*reinterpret_cast< std::add_pointer_t<bool>>(_a[1]))); break;
+        case 8: _t->usbOrientationDataReceived((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1])),(*reinterpret_cast< std::add_pointer_t<quint64>>(_a[2]))); break;
+        case 9: _t->sendUsbData((*reinterpret_cast< std::add_pointer_t<QByteArray>>(_a[1]))); break;
+        case 10: _t->handleUsbConnection(); break;
+        case 11: _t->handleUsbDisconnection(); break;
+        case 12: _t->processUsbData(); break;
+        case 13: _t->checkUsbConnection(); break;
+        case 14: _t->handleNetworkStatus((*reinterpret_cast< std::add_pointer_t<QString>>(_a[1]))); break;
+        case 15: _t->handleUsbInterfaceDetected((*reinterpret_cast< std::add_pointer_t<bool>>(_a[1]))); break;
         default: ;
         }
     } else if (_c == QMetaObject::IndexOfMethod) {
@@ -329,6 +340,13 @@ void UsbManager::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, 
                 return;
             }
         }
+        {
+            using _t = void (UsbManager::*)(const QByteArray & , quint64 );
+            if (_t _q_method = &UsbManager::usbOrientationDataReceived; *reinterpret_cast<_t *>(_a[1]) == _q_method) {
+                *result = 8;
+                return;
+            }
+        }
     }
 }
 
@@ -351,13 +369,13 @@ int UsbManager::qt_metacall(QMetaObject::Call _c, int _id, void **_a)
     if (_id < 0)
         return _id;
     if (_c == QMetaObject::InvokeMetaMethod) {
-        if (_id < 15)
+        if (_id < 16)
             qt_static_metacall(this, _c, _id, _a);
-        _id -= 15;
+        _id -= 16;
     } else if (_c == QMetaObject::RegisterMethodArgumentMetaType) {
-        if (_id < 15)
+        if (_id < 16)
             *reinterpret_cast<QMetaType *>(_a[0]) = QMetaType();
-        _id -= 15;
+        _id -= 16;
     }
     return _id;
 }
@@ -414,5 +432,12 @@ void UsbManager::usbLidarConfidenceMapReceived(const QByteArray & _t1, quint64 _
 {
     void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
     QMetaObject::activate(this, &staticMetaObject, 7, _a);
+}
+
+// SIGNAL 8
+void UsbManager::usbOrientationDataReceived(const QByteArray & _t1, quint64 _t2)
+{
+    void *_a[] = { nullptr, const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t1))), const_cast<void*>(reinterpret_cast<const void*>(std::addressof(_t2))) };
+    QMetaObject::activate(this, &staticMetaObject, 8, _a);
 }
 QT_WARNING_POP

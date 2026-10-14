@@ -49,6 +49,7 @@ Scene::Scene()
     : m_nextObjectId(1)
     , m_cubeMeshId(0)
     , m_sphereMeshId(0)
+    , m_torusMeshId(0)
 {
     m_camera = std::make_unique<Camera>();
 }
@@ -118,6 +119,11 @@ void Scene::update(float deltaTime)
             glm::quat rotationX = glm::angleAxis(time * rotationSpeedX, glm::vec3(1.0f, 0.0f, 0.0f));
             glm::quat rotationY = glm::angleAxis(time * rotationSpeedY, glm::vec3(0.0f, 1.0f, 0.0f));
             obj.rotation = rotationY * rotationX;
+        } else if (obj.meshId == m_torusMeshId) {
+            // Вращаем тор вокруг оси Z
+            float rotationSpeedZ = 1.2f;
+            glm::quat rotationZ = glm::angleAxis(time * rotationSpeedZ, glm::vec3(0.0f, 0.0f, 1.0f));
+            obj.rotation = rotationZ;
         }
     }
 }
@@ -167,14 +173,74 @@ void Scene::createDemoScene(Renderer* renderer)
         m_cubeMeshId = renderer->createMesh(kCubeVertices, kCubeIndices);
     }
     
-    // Создание одного куба (квадрат)
-    SceneObject cube1;
-    cube1.position = glm::vec3(0.0f, 0.0f, -1.0f); // На 1 метр перед камерой
-    cube1.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
-    cube1.scale = glm::vec3(0.2f); // 20 см куб
-    cube1.visible = true;
-    cube1.meshId = m_cubeMeshId;
-    addObject(cube1);
+    // 🔹 ТЕСТОВЫЕ КУБИКИ ДЛЯ ПРОВЕРКИ ПОЗИЦИИ ПО ВСЕМ ОСЯМ
+    // Камера находится на (0,0,0), смотрит в направлении (0,0,-1)
+    
+    // ========== X ОСЬ (ВЛЕВО-ВПРАВО) ==========
+    // Кубик СЛЕВА (X отрицательный)
+    SceneObject cubeLeft;
+    cubeLeft.position = glm::vec3(-0.5f, 0.0f, -0.5f);
+    cubeLeft.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeLeft.scale = glm::vec3(0.1f);
+    cubeLeft.visible = true;
+    cubeLeft.meshId = m_cubeMeshId;
+    addObject(cubeLeft);
+    
+    // Кубик В ЦЕНТРЕ (X = 0)
+    SceneObject cubeCenter;
+    cubeCenter.position = glm::vec3(0.0f, 0.0f, -0.5f);
+    cubeCenter.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeCenter.scale = glm::vec3(0.1f);
+    cubeCenter.visible = true;
+    cubeCenter.meshId = m_cubeMeshId;
+    addObject(cubeCenter);
+    
+    // Кубик СПРАВА (X положительный)
+    SceneObject cubeRight;
+    cubeRight.position = glm::vec3(0.5f, 0.0f, -0.5f);
+    cubeRight.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeRight.scale = glm::vec3(0.1f);
+    cubeRight.visible = true;
+    cubeRight.meshId = m_cubeMeshId;
+    addObject(cubeRight);
+    
+    // ========== Y ОСЬ (ВВЕРХ-ВНИЗ) ==========
+    // Кубик ВНИЗУ (Y отрицательный)
+    SceneObject cubeDown;
+    cubeDown.position = glm::vec3(0.0f, -0.5f, -0.5f);
+    cubeDown.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeDown.scale = glm::vec3(0.1f);
+    cubeDown.visible = true;
+    cubeDown.meshId = m_cubeMeshId;
+    addObject(cubeDown);
+    
+    // Кубик ВВЕРХУ (Y положительный)
+    SceneObject cubeUp;
+    cubeUp.position = glm::vec3(0.0f, 0.5f, -0.5f);
+    cubeUp.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeUp.scale = glm::vec3(0.1f);
+    cubeUp.visible = true;
+    cubeUp.meshId = m_cubeMeshId;
+    addObject(cubeUp);
+    
+    // ========== Z ОСЬ (ВПЕРЕД-НАЗАД) ==========
+    // Кубик БЛИЗКО (Z отрицательный, близко к камере)
+    SceneObject cubeNear;
+    cubeNear.position = glm::vec3(0.0f, 0.0f, -0.3f);
+    cubeNear.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeNear.scale = glm::vec3(0.1f);
+    cubeNear.visible = true;
+    cubeNear.meshId = m_cubeMeshId;
+    addObject(cubeNear);
+    
+    // Кубик ДАЛЕКО (Z отрицательный, далеко от камеры)
+    SceneObject cubeFar;
+    cubeFar.position = glm::vec3(0.0f, 0.0f, -1.0f);
+    cubeFar.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    cubeFar.scale = glm::vec3(0.1f);
+    cubeFar.visible = true;
+    cubeFar.meshId = m_cubeMeshId;
+    addObject(cubeFar);
     
     // Создаем правильную сферу через параметрическое уравнение
     std::vector<float> sphereVertices;
@@ -250,6 +316,71 @@ void Scene::createDemoScene(Renderer* renderer)
     sphere2.visible = true;
     sphere2.meshId = m_sphereMeshId;
     addObject(sphere2);
+
+    // Создаем тор (параметрическая поверхность)
+    std::vector<float> torusVertices;
+    std::vector<uint32_t> torusIndices;
+
+    const float majorRadius = 0.35f; // радиус от центра до трубы
+    const float minorRadius = 0.12f; // радиус трубы
+    const int majorSegments = 48;
+    const int minorSegments = 24;
+
+    for (int i = 0; i <= majorSegments; ++i) {
+        float u = static_cast<float>(i) / static_cast<float>(majorSegments);
+        float theta = u * 2.0f * 3.14159f;
+        float cosTheta = std::cos(theta);
+        float sinTheta = std::sin(theta);
+
+        for (int j = 0; j <= minorSegments; ++j) {
+            float v = static_cast<float>(j) / static_cast<float>(minorSegments);
+            float phi = v * 2.0f * 3.14159f;
+            float cosPhi = std::cos(phi);
+            float sinPhi = std::sin(phi);
+
+            glm::vec3 center(majorRadius * cosTheta, majorRadius * sinTheta, 0.0f);
+            glm::vec3 normal(cosTheta * cosPhi, sinTheta * cosPhi, sinPhi);
+            glm::vec3 position = center + normal * minorRadius;
+            normal = glm::normalize(normal);
+
+            torusVertices.push_back(position.x);
+            torusVertices.push_back(position.y);
+            torusVertices.push_back(position.z);
+            torusVertices.push_back(normal.x);
+            torusVertices.push_back(normal.y);
+            torusVertices.push_back(normal.z);
+            torusVertices.push_back(u);
+            torusVertices.push_back(v);
+        }
+    }
+
+    const int stride = minorSegments + 1;
+    for (int i = 0; i < majorSegments; ++i) {
+        for (int j = 0; j < minorSegments; ++j) {
+            uint32_t a = static_cast<uint32_t>(i * stride + j);
+            uint32_t b = static_cast<uint32_t>((i + 1) * stride + j);
+            uint32_t c = static_cast<uint32_t>((i + 1) * stride + (j + 1));
+            uint32_t d = static_cast<uint32_t>(i * stride + (j + 1));
+
+            torusIndices.push_back(a);
+            torusIndices.push_back(b);
+            torusIndices.push_back(d);
+
+            torusIndices.push_back(b);
+            torusIndices.push_back(c);
+            torusIndices.push_back(d);
+        }
+    }
+
+    m_torusMeshId = renderer->createMesh(torusVertices, torusIndices);
+
+    SceneObject torus;
+    torus.position = glm::vec3(0.0f, 0.25f, -1.0f); // Чуть выше центра
+    torus.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    torus.scale = glm::vec3(0.18f);
+    torus.visible = true;
+    torus.meshId = m_torusMeshId;
+    addObject(torus);
     
     std::cout << "[OK] Demo scene created: " << m_objects.size() << " objects" << std::endl;
 }
@@ -278,6 +409,90 @@ void Scene::updateCameraFromAR(const glm::vec3& position, const glm::quat& rotat
 {
     if (m_camera) {
         m_camera->updateFromAR(position, rotation);
+    }
+    
+    // Обновляем frustum culling после изменения камеры
+    updateFrustumCulling();
+}
+
+void Scene::updateFrustumCulling()
+{
+    if (!m_camera) return;
+    
+    // Получаем матрицы камеры
+    glm::mat4 view = m_camera->getViewMatrix();
+    glm::mat4 projection = m_camera->getProjectionMatrix();
+    glm::mat4 viewProjection = projection * view;
+    
+    // Вычисляем плоскости frustum из viewProjection матрицы
+    // Порядок плоскостей: left, right, bottom, top, near, far
+    glm::vec4 frustumPlanes[6];
+    
+    // Left plane
+    frustumPlanes[0] = glm::vec4(viewProjection[0][3] + viewProjection[0][0],
+                                 viewProjection[1][3] + viewProjection[1][0],
+                                 viewProjection[2][3] + viewProjection[2][0],
+                                 viewProjection[3][3] + viewProjection[3][0]);
+    
+    // Right plane
+    frustumPlanes[1] = glm::vec4(viewProjection[0][3] - viewProjection[0][0],
+                                 viewProjection[1][3] - viewProjection[1][0],
+                                 viewProjection[2][3] - viewProjection[2][0],
+                                 viewProjection[3][3] - viewProjection[3][0]);
+    
+    // Bottom plane
+    frustumPlanes[2] = glm::vec4(viewProjection[0][3] + viewProjection[0][1],
+                                 viewProjection[1][3] + viewProjection[1][1],
+                                 viewProjection[2][3] + viewProjection[2][1],
+                                 viewProjection[3][3] + viewProjection[3][1]);
+    
+    // Top plane
+    frustumPlanes[3] = glm::vec4(viewProjection[0][3] - viewProjection[0][1],
+                                 viewProjection[1][3] - viewProjection[1][1],
+                                 viewProjection[2][3] - viewProjection[2][1],
+                                 viewProjection[3][3] - viewProjection[3][1]);
+    
+    // Near plane
+    frustumPlanes[4] = glm::vec4(viewProjection[0][3] + viewProjection[0][2],
+                                 viewProjection[1][3] + viewProjection[1][2],
+                                 viewProjection[2][3] + viewProjection[2][2],
+                                 viewProjection[3][3] + viewProjection[3][2]);
+    
+    // Far plane
+    frustumPlanes[5] = glm::vec4(viewProjection[0][3] - viewProjection[0][2],
+                                 viewProjection[1][3] - viewProjection[1][2],
+                                 viewProjection[2][3] - viewProjection[2][2],
+                                 viewProjection[3][3] - viewProjection[3][2]);
+    
+    // Нормализуем плоскости
+    for (int i = 0; i < 6; ++i) {
+        float length = glm::length(glm::vec3(frustumPlanes[i]));
+        frustumPlanes[i] /= length;
+    }
+    
+    // Проверяем каждый объект
+    for (auto& obj : m_objects) {
+        if (!obj.visible) continue; // Если уже скрыт, пропускаем
+        
+        // Вычисляем максимальный радиус bounding sphere на основе scale
+        float maxScale = std::max({obj.scale.x, obj.scale.y, obj.scale.z});
+        float sphereRadius = obj.boundingRadius * maxScale;
+        
+        // Проверяем пересечение с каждой плоскостью frustum
+        bool insideFrustum = true;
+        for (int i = 0; i < 6; ++i) {
+            // Вычисляем расстояние от центра объекта до плоскости
+            float distance = glm::dot(glm::vec3(frustumPlanes[i]), obj.position) + frustumPlanes[i].w;
+            
+            // Если расстояние < -radius, объект полностью вне frustum
+            if (distance < -sphereRadius) {
+                insideFrustum = false;
+                break;
+            }
+        }
+        
+        // Скрываем объект если он вне frustum
+        obj.visible = insideFrustum;
     }
 }
 

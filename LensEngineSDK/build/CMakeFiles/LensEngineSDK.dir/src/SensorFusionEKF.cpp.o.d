@@ -1,8 +1,8 @@
 CMakeFiles/LensEngineSDK.dir/src/SensorFusionEKF.cpp.o: \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/src/SensorFusionEKF.cpp \
  /usr/include/stdc-predef.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/SensorFusionEKF.h \
- /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/SensorFusionEKF.h \
+ /home/savva/Documents/ARLauncherProject/LensEngineSDK/include/LensEngineTypes.h \
  /usr/include/glm/glm.hpp /usr/include/glm/detail/_fixes.hpp \
  /usr/include/c++/13/cmath /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h \

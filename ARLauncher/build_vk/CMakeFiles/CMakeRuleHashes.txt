@@ -1,0 +1,6 @@
+# Hashes of file build rules.
+7595079a305c8ed96c02bbb3a1ec60f8 CMakeFiles/ARLauncherVulkanShaders
+e48a93b42eebf8c03b55d09b131ede75 shaders_vk/mesh.frag.spv
+e9dc7730b3e65d84f8ba717124b56398 shaders_vk/mesh.vert.spv
+bbcd82b7d05467a4dfd591ac44ee52b7 shaders_vk/ui.frag.spv
+af896d0c7027c1863d6b9fd82a14f2a7 shaders_vk/ui.vert.spv

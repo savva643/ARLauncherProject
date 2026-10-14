@@ -44,7 +44,10 @@ QString UsbManager::findAppleUSBInterface()
         // 🔹 ИЩЕМ APPLE MOBILE DEVICE ETHERNET ПО НАЗВАНИЮ И ОПИСАНИЮ
         if (description.contains("Apple Mobile Device Ethernet", Qt::CaseInsensitive) ||
             description.contains("Apple Mobile Device", Qt::CaseInsensitive) ||
-            name.contains("Ethernet", Qt::CaseInsensitive)) {
+            description.contains("Apple iPhone USB Ethernet", Qt::CaseInsensitive) ||
+            name.contains("enx", Qt::CaseInsensitive) ||
+            name.contains("ipheth", Qt::CaseInsensitive) ||
+            name.contains("usb", Qt::CaseInsensitive)) {
 
             qDebug() << "🎯 Найден Apple USB интерфейс:" << name << "(" << description << ")";
 
@@ -59,6 +62,9 @@ QString UsbManager::findAppleUSBInterface()
                     return ip.toString();
                 }
             }
+            // Если интерфейс найден но IP не назначен, используем стандартный IP для USB
+            qDebug() << "⚠️ Apple USB интерфейс найден но IP не назначен, используем стандартный: 172.20.10.3";
+            return "172.20.10.3";
         }
     }
 
@@ -252,7 +258,9 @@ void UsbManager::processUsbData()
             break;
 
         case 0x02: // LiDAR Depth
-            qDebug() << "🎯 usbLidarDataReceived";
+            if (m_lidarLogCounter++ % 60 == 0) {
+                qDebug() << "🎯 [LIDAR] usbLidarDataReceived (Seq:" << sequenceNumber << ")";
+            }
             emit usbLidarDataReceived(payload, sequenceNumber);
             break;
 
@@ -268,6 +276,10 @@ void UsbManager::processUsbData()
         case 0x09: // LiDAR Confidence Map
             // Можно добавить отдельный сигнал или использовать существующий
             emit usbLidarConfidenceMapReceived(payload, sequenceNumber);
+            break;
+
+        case 0x0A: // Device Orientation
+            emit usbOrientationDataReceived(payload, sequenceNumber);
             break;
 
         default:

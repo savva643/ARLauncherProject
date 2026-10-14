@@ -37,6 +37,7 @@ public:
 
     int clientsCount() const { return m_clientsCount; }
     QString serverStatus() const { return m_serverStatus; }
+    bool isUsbConnected() const;
 
 signals:
     // Статус и статистика
@@ -63,7 +64,8 @@ private slots:
     void handleUsbSensorData(const QByteArray &data, quint64 sequenceNumber);
     void handleUsbRawLidarPointCloud(const QByteArray &data, quint64 sequenceNumber);
     void handleUsbLidarConfidenceMap(const QByteArray &data, quint64 sequenceNumber);
-    
+    void handleUsbOrientationData(const QByteArray &data, quint64 sequenceNumber);
+
     // Декодеры
     void handleTurboImageDecoded(const QImage &image, int dataSize, quint64 sequenceNumber);
 

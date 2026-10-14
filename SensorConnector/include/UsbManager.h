@@ -48,6 +48,7 @@ signals:
     // 🔹 НОВЫЕ СИГНАЛЫ ДЛЯ ДОПОЛНИТЕЛЬНЫХ ТИПОВ ДАННЫХ
     void usbRawLidarPointCloudReceived(const QByteArray &data, quint64 sequenceNumber);  // 0x08 - Raw LiDAR Point Cloud
     void usbLidarConfidenceMapReceived(const QByteArray &data, quint64 sequenceNumber);  // 0x09 - LiDAR Confidence Map
+    void usbOrientationDataReceived(const QByteArray &data, quint64 sequenceNumber);    // 0x0A - Device Orientation
 
 public slots:
     void sendUsbData(const QByteArray &data);
@@ -66,6 +67,7 @@ private:
     QTimer *m_connectionTimer;
     bool m_usbConnected;
     NetworkConfigurator *m_networkConfigurator;
+    int m_lidarLogCounter = 0;
 
     void setupUsbNetwork();
 

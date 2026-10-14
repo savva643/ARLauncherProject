@@ -32,6 +32,15 @@ bool FontRenderer::initialize()
 #endif
 }
 
+bool FontRenderer::isFontLoaded() const
+{
+#ifdef USE_FREETYPE
+    return m_fontLoaded;
+#else
+    return false;
+#endif
+}
+
 bool FontRenderer::loadFont(const std::string& fontPath, unsigned int fontSize)
 {
 #ifdef USE_FREETYPE
@@ -96,9 +105,10 @@ bool FontRenderer::loadFont(const std::string& fontPath, unsigned int fontSize)
 #endif
 }
 
+// OpenGL-only: glyphs are cached as GL textures
+#if defined(USE_FREETYPE) && defined(USE_OPENGL)
 void FontRenderer::loadGlyph(char32_t codepoint)
 {
-#ifdef USE_FREETYPE
     if (!m_ftFace || m_glyphCache.find(codepoint) != m_glyphCache.end()) {
         return; // Уже загружен или шрифт не загружен
     }
@@ -149,8 +159,8 @@ void FontRenderer::loadGlyph(char32_t codepoint)
     
     m_glyphCache[codepoint] = glyphData;
     glBindTexture(GL_TEXTURE_2D, 0);
-#endif
 }
+#endif
 
 std::u32string FontRenderer::utf8ToUtf32(const std::string& utf8)
 {
@@ -195,9 +205,16 @@ std::u32string FontRenderer::utf8ToUtf32(const std::string& utf8)
 void FontRenderer::renderText(const std::string& text, float x, float y, 
                               const glm::vec4& color, float scale)
 {
-#ifdef USE_FREETYPE
+#if defined(USE_FREETYPE) && defined(USE_OPENGL)
     if (!m_fontLoaded || !m_ftFace) {
         return;
+    }
+    
+    // КРИТИЧЕСКИ ВАЖНО: Отключаем активный shader program перед fixed-function рендерингом
+    typedef void (APIENTRY *PFNGLUSEPROGRAMPROC)(GLuint);
+    extern PFNGLUSEPROGRAMPROC glUseProgram;
+    if (glUseProgram) {
+        glUseProgram(0);
     }
     
     std::u32string utf32 = utf8ToUtf32(text);
@@ -261,7 +278,7 @@ void FontRenderer::renderText(const std::string& text, float x, float y,
 
 glm::vec2 FontRenderer::getTextSize(const std::string& text)
 {
-#ifdef USE_FREETYPE
+#if defined(USE_FREETYPE) && defined(USE_OPENGL)
     if (!m_fontLoaded || !m_ftFace) {
         return glm::vec2(0.0f);
     }
@@ -290,9 +307,62 @@ glm::vec2 FontRenderer::getTextSize(const std::string& text)
 #endif
 }
 
+void FontRenderer::renderTextToBitmap(const std::string& text, float x, float y,
+                                        const glm::vec4& color, float scale,
+                                        uint8_t* bitmap, int width, int height)
+{
+#if defined(USE_FREETYPE)
+    if (!m_fontLoaded || !m_ftFace || !bitmap || width <= 0 || height <= 0) {
+        return;
+    }
+
+    std::u32string utf32 = utf8ToUtf32(text);
+    float startX = x;
+
+    for (char32_t codepoint : utf32) {
+        FT_Error error = FT_Load_Char(m_ftFace, codepoint, FT_LOAD_RENDER);
+        if (error) {
+            continue;
+        }
+
+        FT_GlyphSlot glyph = m_ftFace->glyph;
+        FT_Bitmap& ftBitmap = glyph->bitmap;
+        if (!ftBitmap.buffer || ftBitmap.width == 0 || ftBitmap.rows == 0) {
+            startX += (glyph->advance.x >> 6) * scale;
+            continue;
+        }
+
+        int xpos = static_cast<int>(startX + glyph->bitmap_left * scale);
+        int ypos = static_cast<int>(y - (glyph->bitmap_top * scale));
+
+        for (unsigned int row = 0; row < ftBitmap.rows; ++row) {
+            for (unsigned int col = 0; col < ftBitmap.width; ++col) {
+                int px = xpos + static_cast<int>(col * scale);
+                int py = ypos + static_cast<int>(row * scale);
+                if (px < 0 || px >= width || py < 0 || py >= height) {
+                    continue;
+                }
+                unsigned char gray = ftBitmap.buffer[row * ftBitmap.width + col];
+                if (gray == 0) continue;
+                int idx = (py * width + px) * 4;
+                float a = gray / 255.0f;
+                bitmap[idx + 0] = static_cast<uint8_t>(color.r * 255 * a + bitmap[idx + 0] * (1.0f - a));
+                bitmap[idx + 1] = static_cast<uint8_t>(color.g * 255 * a + bitmap[idx + 1] * (1.0f - a));
+                bitmap[idx + 2] = static_cast<uint8_t>(color.b * 255 * a + bitmap[idx + 2] * (1.0f - a));
+                bitmap[idx + 3] = static_cast<uint8_t>(color.a * 255 * a + bitmap[idx + 3] * (1.0f - a));
+            }
+        }
+
+        startX += (glyph->advance.x >> 6) * scale;
+    }
+#else
+    (void)text; (void)x; (void)y; (void)color; (void)scale; (void)bitmap; (void)width; (void)height;
+#endif
+}
+
 void FontRenderer::cleanup()
 {
-#ifdef USE_FREETYPE
+#if defined(USE_FREETYPE) && defined(USE_OPENGL)
     // Удаляем текстуры глифов
     for (auto& pair : m_glyphCache) {
         glDeleteTextures(1, &pair.second.textureId);
@@ -309,6 +379,18 @@ void FontRenderer::cleanup()
         m_ftLibrary = nullptr;
     }
     
+    m_fontLoaded = false;
+#elif defined(USE_FREETYPE)
+    if (m_ftFace) {
+        FT_Done_Face(m_ftFace);
+        m_ftFace = nullptr;
+    }
+
+    if (m_ftLibrary) {
+        FT_Done_FreeType(m_ftLibrary);
+        m_ftLibrary = nullptr;
+    }
+
     m_fontLoaded = false;
 #endif
 }

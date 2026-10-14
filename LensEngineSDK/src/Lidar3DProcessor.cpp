@@ -3,12 +3,15 @@
 #include <cmath>
 #include <random>
 #include <future>
+#include <iostream>
 
 namespace LensEngine {
 
 Lidar3DProcessor::Lidar3DProcessor()
     : m_cancelProcessing(false)
 {
+    m_planeDetector = std::make_unique<PlaneDetector>();
+    m_meshGenerator = std::make_unique<MeshGenerator>();
 }
 
 Lidar3DProcessor::~Lidar3DProcessor()
@@ -23,53 +26,94 @@ void Lidar3DProcessor::stopProcessing()
 
 std::vector<glm::vec3> Lidar3DProcessor::processDepthData(const std::vector<uint8_t> &depthData)
 {
-    if (depthData.size() != 256 * 192 * sizeof(float)) {
+    size_t totalFloats = depthData.size() / sizeof(float);
+    if (totalFloats == 0 || depthData.size() % sizeof(float) != 0) {
         return std::vector<glm::vec3>();
     }
 
+    int width = 256, height = 192;
+    if (totalFloats == 256 * 192) { width = 256; height = 192; }
+    else if (totalFloats == 320 * 240) { width = 320; height = 240; }
+    else if (totalFloats == 240 * 180) { width = 240; height = 180; }
+    else {
+        height = static_cast<int>(std::sqrt(totalFloats));
+        width = static_cast<int>(totalFloats / height);
+    }
+
     const float* depthValues = reinterpret_cast<const float*>(depthData.data());
-    const int width = 256;
-    const int height = 192;
 
     std::vector<glm::vec3> points;
     points.reserve((width * height) / 4);
 
-    // Оптимизированная обработка каждого 2-го пикселя
     for (int y = 0; y < height; y += 2) {
         for (int x = 0; x < width; x += 2) {
             int index = y * width + x;
             float depth = depthValues[index];
-
             if (depth >= m_minDepth && depth <= m_maxDepth && !std::isnan(depth)) {
-                glm::vec3 point = depthToWorldSpace(x, y, depth);
-                points.push_back(point);
+                points.push_back(depthToWorldSpace(x, y, depth, width, height));
             }
         }
     }
-
     return points;
 }
 
 std::vector<glm::vec3> Lidar3DProcessor::processDepthDataFast(const std::vector<uint8_t> &depthData)
 {
-    if (depthData.size() != 256 * 192 * sizeof(float)) {
+    
+    // Определяем размеры из размера данных: width * height * sizeof(float)
+    size_t totalFloats = depthData.size() / sizeof(float);
+    
+    if (totalFloats == 0 || depthData.size() % sizeof(float) != 0) {
         return std::vector<glm::vec3>();
     }
 
+    // Пытаемся угадать разрешение: типичные iPhone LiDAR = 256x192 (=49152 floats)
+    int width = 256;
+    int height = 192;
+    if (totalFloats == 256 * 192) {
+        width = 256; height = 192;
+    } else if (totalFloats == 320 * 240) {
+        width = 320; height = 240;
+    } else if (totalFloats == 240 * 180) {
+        width = 240; height = 180;
+    } else if (totalFloats == 128 * 96) {
+        width = 128; height = 96;
+    } else if (totalFloats == 64 * 48) {
+        width = 64; height = 48;
+    } else {
+        // Неизвестное разрешение — пробуем квадратное или близкое
+        height = static_cast<int>(std::sqrt(totalFloats));
+        width = static_cast<int>(totalFloats / height);
+        if (width * height != static_cast<int>(totalFloats)) {
+            // Не удалось подобрать — используем 256x192 как fallback
+            width = 256; height = 192;
+        }
+    }
+    
+
     const float* depthValues = reinterpret_cast<const float*>(depthData.data());
-    const int width = 256;
-    const int height = 192;
 
     std::vector<glm::vec3> points;
-    points.reserve((width * height) / 16);
+    
+    // Адаптивный шаг sampling в зависимости от разрешения для оптимизации производительности
+    int step = 8;  // стандартный шаг
+    if (width >= 320) {
+        step = 48;  // для 320x240 - агрессивный downsampling для 120 FPS
+    } else if (width >= 256) {
+        step = 32;  // для средних разрешений
+    } else if (width >= 128) {
+        step = 16;  // для малых разрешений
+    }
+    
+    points.reserve((width * height) / (step * step));
 
-    for (int y = 0; y < height; y += 4) {
-        for (int x = 0; x < width; x += 4) {
+    for (int y = 0; y < height; y += step) {
+        for (int x = 0; x < width; x += step) {
             int index = y * width + x;
             float depth = depthValues[index];
 
             if (depth >= 0.15f && depth <= 5.0f && !std::isnan(depth)) {
-                glm::vec3 point = depthToWorldSpace(x, y, depth);
+                glm::vec3 point = depthToWorldSpace(x, y, depth, width, height);
                 points.push_back(point);
             }
         }
@@ -182,12 +226,30 @@ Lidar3DProcessor::SpatialAnalysisResult Lidar3DProcessor::analyzeSpatialEnvironm
         return result;
     }
 
-    // Простое обнаружение пола
-    PlaneResult floor = detectFloorPlane(points);
-    if (floor.confidence > 0.7f) {
-        result.hasFloor = true;
-        result.floorHeight = floor.distance;
-        result.floorNormal = floor.normal;
+    // Используем PlaneDetector для обнаружения плоскостей
+    if (m_planeDetector) {
+        auto detectedPlanes = m_planeDetector->detectPlanes(points, 5);
+        
+        for (const auto& plane : detectedPlanes) {
+            if (plane.isFloor && plane.confidence > 0.3f) {
+                result.hasFloor = true;
+                result.floorHeight = m_planeDetector->getFloorHeight();
+                result.floorNormal = plane.normal;
+                result.planes.push_back(plane.normal);
+            } else if (plane.isWall && plane.confidence > 0.3f) {
+                result.walls.push_back(plane.normal);
+            }
+        }
+    }
+
+    // Fallback на старый метод если PlaneDetector не сработал
+    if (!result.hasFloor) {
+        PlaneResult floor = detectFloorPlane(points);
+        if (floor.confidence > 0.7f) {
+            result.hasFloor = true;
+            result.floorHeight = floor.distance;
+            result.floorNormal = floor.normal;
+        }
     }
 
     // Обнаружение препятствий
@@ -299,20 +361,22 @@ std::vector<glm::vec3> Lidar3DProcessor::removeOutliers(const std::vector<glm::v
     return points;
 }
 
-glm::vec3 Lidar3DProcessor::depthToWorldSpace(int x, int y, float depth)
+glm::vec3 Lidar3DProcessor::depthToWorldSpace(int x, int y, float depth, int width, int height)
 {
-    // Преобразование из координат пикселя в мировые координаты
-    float fx = 256.0f; // Фокусное расстояние (примерное)
-    float fy = 256.0f;
-    float cx = 128.0f; // Центр изображения
-    float cy = 96.0f;
+    // iPhone LiDAR intrinsics (approximate for 256x192 and similar)
+    // HFOV ≈ 57°, VFOV ≈ 43°
+    float fx = static_cast<float>(width)  / (2.0f * std::tan(glm::radians(57.0f) / 2.0f));
+    float fy = static_cast<float>(height) / (2.0f * std::tan(glm::radians(43.0f) / 2.0f));
+    float cx = static_cast<float>(width)  / 2.0f;
+    float cy = static_cast<float>(height) / 2.0f;
 
     float u = static_cast<float>(x) - cx;
     float v = static_cast<float>(y) - cy;
 
+    // Camera space: z forward, x right, y down
     glm::vec3 point;
     point.x = (u * depth) / fx;
-    point.y = (v * depth) / fy;
+    point.y = -(v * depth) / fy;  // flip Y so +Y is up in world space
     point.z = depth;
 
     return point;
@@ -321,6 +385,20 @@ glm::vec3 Lidar3DProcessor::depthToWorldSpace(int x, int y, float depth)
 float Lidar3DProcessor::pointToPlaneDistance(const glm::vec3 &point, const glm::vec3 &planeNormal, const glm::vec3 &planePoint)
 {
     return glm::dot(point - planePoint, planeNormal);
+}
+
+Mesh Lidar3DProcessor::generateEnvironmentMesh(float voxelSize, float maxEdgeLength)
+{
+    std::lock_guard<std::mutex> lock(m_dataLock);
+    
+    if (m_lastProcessedPoints.empty()) {
+        std::cerr << "[Lidar3DProcessor] No points available for mesh generation" << std::endl;
+        return Mesh();
+    }
+    
+    std::cout << "[Lidar3DProcessor] Generating mesh from " << m_lastProcessedPoints.size() << " points" << std::endl;
+    
+    return m_meshGenerator->generateMesh(m_lastProcessedPoints, voxelSize, maxEdgeLength);
 }
 
 } // namespace LensEngine

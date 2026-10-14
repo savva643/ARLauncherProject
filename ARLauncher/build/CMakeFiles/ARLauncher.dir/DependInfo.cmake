@@ -8,8 +8,10 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
+  "/home/savva/Documents/ARLauncherProject/ARLauncher/src/ARLauncherAPI.cpp" "CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/ARLauncherAPI.cpp.o.d"
   "/home/savva/Documents/ARLauncherProject/ARLauncher/src/Application.cpp" "CMakeFiles/ARLauncher.dir/src/Application.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/Application.cpp.o.d"
   "/home/savva/Documents/ARLauncherProject/ARLauncher/src/Camera.cpp" "CMakeFiles/ARLauncher.dir/src/Camera.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/Camera.cpp.o.d"
+  "/home/savva/Documents/ARLauncherProject/ARLauncher/src/FontRenderer.cpp" "CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/FontRenderer.cpp.o.d"
   "/home/savva/Documents/ARLauncherProject/ARLauncher/src/Renderer.cpp" "CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/Renderer.cpp.o.d"
   "/home/savva/Documents/ARLauncherProject/ARLauncher/src/Scene.cpp" "CMakeFiles/ARLauncher.dir/src/Scene.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/Scene.cpp.o.d"
   "/home/savva/Documents/ARLauncherProject/ARLauncher/src/main.cpp" "CMakeFiles/ARLauncher.dir/src/main.cpp.o" "gcc" "CMakeFiles/ARLauncher.dir/src/main.cpp.o.d"

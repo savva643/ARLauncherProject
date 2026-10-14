@@ -5,6 +5,10 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
+#include <fstream>
+#include <string>
+#include <vector>
+
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
 #define GL_GLEXT_PROTOTYPES
@@ -289,6 +293,8 @@ inline void nvgText(NVGcontext* ctx, float x, float y, const char* string, const
 #include <vulkan/vulkan.h>
 #include <set>
 #include <cstring>
+#include <array>
+#include <glm/gtc/type_ptr.hpp>
 #endif
 #include <iostream>
 
@@ -667,7 +673,7 @@ void OpenGLRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
 
     // Включаем depth test и отключаем culling для отображения обеих сторон
     glEnable(GL_DEPTH_TEST);
-    glDisable(GL_CULL_FACE); // Отключаем culling чтобы видеть обе стороны куба
+    glDisable(GL_CULL_FACE); // Отключаем culling чтобы видеть обе стороны кубаа
 
     if (m_basicShaderProgram != 0) {
         glUseProgram(m_basicShaderProgram);
@@ -782,6 +788,79 @@ void OpenGLRenderer::renderUIWindows()
     glDisable(GL_BLEND);
 #endif
 }
+
+#ifdef USE_VULKAN
+uint32_t VulkanRenderer::createUIWindow(const std::string& title,
+                                        const std::string& subtitle,
+                                        const glm::vec3& position,
+                                        const glm::vec2& size,
+                                        bool hasButton,
+                                        const std::string& buttonText)
+{
+#ifdef USE_VULKAN
+    const int baseResolution = 512;
+    int pixelWidth = static_cast<int>(std::max(256.0f, size.x * baseResolution));
+    int pixelHeight = static_cast<int>(std::max(256.0f, size.y * baseResolution));
+
+    std::vector<uint8_t> bitmap(pixelWidth * pixelHeight * 4, 0);
+
+    // Background panel
+    uint8_t r = static_cast<uint8_t>(0.15f * 255);
+    uint8_t g = static_cast<uint8_t>(0.18f * 255);
+    uint8_t b = static_cast<uint8_t>(0.22f * 255);
+    uint8_t a = static_cast<uint8_t>(0.65f * 255);
+    for (int y = 0; y < pixelHeight; ++y) {
+        for (int x = 0; x < pixelWidth; ++x) {
+            int idx = (y * pixelWidth + x) * 4;
+            bitmap[idx + 0] = r;
+            bitmap[idx + 1] = g;
+            bitmap[idx + 2] = b;
+            bitmap[idx + 3] = a;
+        }
+    }
+
+    if (m_fontRenderer && m_fontRenderer->isFontLoaded()) {
+        m_fontRenderer->renderTextToBitmap(title, 40.0f, 60.0f,
+            glm::vec4(1.0f, 1.0f, 1.0f, 0.95f), 42.0f / 48.0f,
+            bitmap.data(), pixelWidth, pixelHeight);
+        m_fontRenderer->renderTextToBitmap(subtitle, 40.0f, 120.0f,
+            glm::vec4(0.85f, 0.88f, 0.95f, 0.85f), 26.0f / 48.0f,
+            bitmap.data(), pixelWidth, pixelHeight);
+        if (hasButton && !buttonText.empty()) {
+            int btnX = 40, btnY = pixelHeight - 100;
+            int btnW = pixelWidth - 80, btnH = 60;
+            for (int by = btnY; by < btnY + btnH && by < pixelHeight; ++by) {
+                for (int bx = btnX; bx < btnX + btnW && bx < pixelWidth; ++bx) {
+                    int idx = (by * pixelWidth + bx) * 4;
+                    bitmap[idx + 0] = static_cast<uint8_t>(0.25f * 255);
+                    bitmap[idx + 1] = static_cast<uint8_t>(0.55f * 255);
+                    bitmap[idx + 2] = static_cast<uint8_t>(0.95f * 255);
+                    bitmap[idx + 3] = static_cast<uint8_t>(0.9f * 255);
+                }
+            }
+            glm::vec2 textSize = m_fontRenderer->getTextSize(buttonText);
+            float textX = btnX + (btnW - textSize.x * (30.0f / 48.0f)) * 0.5f;
+            float textY = btnY + (btnH - textSize.y * (30.0f / 48.0f)) * 0.5f + 40.0f;
+            m_fontRenderer->renderTextToBitmap(buttonText, textX, textY,
+                glm::vec4(1.0f, 1.0f, 1.0f, 0.95f), 30.0f / 48.0f,
+                bitmap.data(), pixelWidth, pixelHeight);
+        }
+    }
+
+    uint32_t textureId = createTexture(bitmap.data(), pixelWidth, pixelHeight);
+    if (textureId == 0) {
+        std::cerr << "[ERROR] VulkanRenderer::createUIWindow: failed to create texture" << std::endl;
+        return 0;
+    }
+
+    setUI3DTexture(textureId, pixelWidth, pixelHeight, position, size, false);
+    return textureId;
+#else
+    (void)title; (void)subtitle; (void)position; (void)size; (void)hasButton; (void)buttonText;
+    return 0;
+#endif
+}
+#endif // USE_VULKAN
 
 uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
                                         const std::string& subtitle,
@@ -1308,6 +1387,43 @@ void OpenGLRenderer::createUIQuad()
 }
 
 #ifdef USE_VULKAN
+namespace {
+std::vector<char> ReadBinaryFileWithFallback(const char* filepath)
+{
+    std::vector<std::string> fallbackPaths = {
+        filepath,
+        std::string("../") + filepath,
+        std::string("../../") + filepath,
+        std::string("../../../") + filepath,
+        std::string("shaders_vk/") + filepath,
+        std::string("ARLauncher/shaders_vk/") + filepath,
+        std::string("build/shaders_vk/") + filepath,
+        std::string("ARLauncher/build/shaders_vk/") + filepath,
+        std::string("build_vk/shaders_vk/") + filepath,
+        std::string("../build_vk/shaders_vk/") + filepath,
+        std::string("../../ARLauncher/build_vk/shaders_vk/") + filepath,
+        std::string("/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/shaders_vk/") + filepath,
+    };
+
+    for (const auto& path : fallbackPaths) {
+        std::ifstream file(path, std::ios::ate | std::ios::binary);
+        if (!file.is_open()) {
+            continue;
+        }
+
+        size_t fileSize = static_cast<size_t>(file.tellg());
+        std::vector<char> buffer(fileSize);
+        file.seekg(0);
+        file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
+        file.close();
+        return buffer;
+    }
+
+    std::cerr << "[ERROR] Unable to open SPIR-V file: " << filepath << std::endl;
+    return {};
+}
+} // namespace
+
 // VulkanRenderer Implementation
 VulkanRenderer::VulkanRenderer()
     : m_instance(VK_NULL_HANDLE)
@@ -1321,18 +1437,54 @@ VulkanRenderer::VulkanRenderer()
     , m_swapchain(VK_NULL_HANDLE)
     , m_swapchainImageFormat(VK_FORMAT_B8G8R8A8_UNORM)
     , m_renderPass(VK_NULL_HANDLE)
+    , m_renderPassWithLoad(VK_NULL_HANDLE)
+    , m_depthImage(VK_NULL_HANDLE)
+    , m_depthImageMemory(VK_NULL_HANDLE)
+    , m_depthImageView(VK_NULL_HANDLE)
+    , m_depthFormat(VK_FORMAT_UNDEFINED)
+    , m_pipelineLayout(VK_NULL_HANDLE)
+    , m_graphicsPipeline(VK_NULL_HANDLE)
     , m_commandPool(VK_NULL_HANDLE)
     , m_currentFrame(0)
     , m_currentImageIndex(0)
     , m_initialized(false)
     , m_nextMeshId(1)
-    , m_videoImage(VK_NULL_HANDLE)
-    , m_videoImageMemory(VK_NULL_HANDLE)
-    , m_videoImageView(VK_NULL_HANDLE)
-    , m_videoSampler(VK_NULL_HANDLE)
+    , m_videoTextureId(0)
     , m_videoTextureInitialized(false)
+    , m_videoOpacity(1.0f)
+    , m_3dObjectsOpacity(1.0f)
+    , m_videoWidth(0)
+    , m_videoHeight(0)
+    , m_nextTextureId(1)
+    , m_uiDescriptorSetLayout(VK_NULL_HANDLE)
+    , m_uiDescriptorPool(VK_NULL_HANDLE)
+    , m_uiDescriptorSet(VK_NULL_HANDLE)
+    , m_uiPipelineLayout(VK_NULL_HANDLE)
+    , m_uiPipeline(VK_NULL_HANDLE)
+    , m_uiPipelineOverlay(VK_NULL_HANDLE)
+    , m_uiVertexBuffer(VK_NULL_HANDLE)
+    , m_uiVertexBufferMemory(VK_NULL_HANDLE)
+    , m_uiIndexBuffer(VK_NULL_HANDLE)
+    , m_uiIndexBufferMemory(VK_NULL_HANDLE)
+    , m_uiIndexCount(0)
+    , m_fontRenderer(nullptr)
 {
     m_swapchainExtent = {0, 0};
+
+    m_ui3D = {};
+    m_ui3D.enabled = false;
+    m_uiOverlay = {};
+    m_uiOverlay.enabled = false;
+
+    m_fontRenderer = new FontRenderer();
+    if (m_fontRenderer) {
+        m_fontRenderer->initialize();
+#ifdef _WIN32
+        m_fontRenderer->loadFont("C:/Windows/Fonts/arial.ttf", 48);
+#else
+        m_fontRenderer->loadFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 48);
+#endif
+    }
 }
 
 VulkanRenderer::~VulkanRenderer()
@@ -1384,9 +1536,24 @@ bool VulkanRenderer::initialize(GLFWwindow* window)
         std::cerr << "Failed to create render pass" << std::endl;
         return false;
     }
+
+    if (!createDepthResources()) {
+        std::cerr << "Failed to create depth resources" << std::endl;
+        return false;
+    }
     
     if (!createFramebuffers()) {
         std::cerr << "Failed to create framebuffers" << std::endl;
+        return false;
+    }
+
+    if (!createGraphicsPipeline()) {
+        std::cerr << "Failed to create graphics pipeline" << std::endl;
+        return false;
+    }
+
+    if (!createUIResources()) {
+        std::cerr << "Failed to create Vulkan UI resources" << std::endl;
         return false;
     }
     
@@ -1419,21 +1586,42 @@ void VulkanRenderer::shutdown()
     vkDeviceWaitIdle(m_device);
     
     // Очистка видео текстуры
-    if (m_videoSampler != VK_NULL_HANDLE) {
-        vkDestroySampler(m_device, m_videoSampler, nullptr);
-        m_videoSampler = VK_NULL_HANDLE;
+    if (m_videoTextureId != 0) {
+        destroyTexture(m_videoTextureId);
+        m_videoTextureId = 0;
     }
-    if (m_videoImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(m_device, m_videoImageView, nullptr);
-        m_videoImageView = VK_NULL_HANDLE;
+
+    destroyUIResources();
+
+    for (auto& tex : m_textures) {
+        if (tex.sampler != VK_NULL_HANDLE) vkDestroySampler(m_device, tex.sampler, nullptr);
+        if (tex.view != VK_NULL_HANDLE) vkDestroyImageView(m_device, tex.view, nullptr);
+        if (tex.image != VK_NULL_HANDLE) vkDestroyImage(m_device, tex.image, nullptr);
+        if (tex.memory != VK_NULL_HANDLE) vkFreeMemory(m_device, tex.memory, nullptr);
+        tex = {};
     }
-    if (m_videoImage != VK_NULL_HANDLE) {
-        vkDestroyImage(m_device, m_videoImage, nullptr);
-        vkFreeMemory(m_device, m_videoImageMemory, nullptr);
-        m_videoImage = VK_NULL_HANDLE;
-        m_videoImageMemory = VK_NULL_HANDLE;
-    }
+    m_textures.clear();
     
+    if (m_graphicsPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+        m_graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (m_pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+        m_pipelineLayout = VK_NULL_HANDLE;
+    }
+
+    if (m_depthImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_device, m_depthImageView, nullptr);
+        m_depthImageView = VK_NULL_HANDLE;
+    }
+    if (m_depthImage != VK_NULL_HANDLE) {
+        vkDestroyImage(m_device, m_depthImage, nullptr);
+        vkFreeMemory(m_device, m_depthImageMemory, nullptr);
+        m_depthImage = VK_NULL_HANDLE;
+        m_depthImageMemory = VK_NULL_HANDLE;
+    }
+
     // Очистка мешей
     for (auto& mesh : m_meshes) {
         if (mesh.vertexBuffer != VK_NULL_HANDLE) {
@@ -1474,6 +1662,12 @@ void VulkanRenderer::shutdown()
         vkDestroyInstance(m_instance, nullptr);
         m_instance = VK_NULL_HANDLE;
     }
+
+    if (m_fontRenderer) {
+        m_fontRenderer->cleanup();
+        delete m_fontRenderer;
+        m_fontRenderer = nullptr;
+    }
     
     m_initialized = false;
 }
@@ -1513,23 +1707,33 @@ void VulkanRenderer::beginFrame()
         return;
     }
     
-    // Если есть видеоизображение, копируем его в swapchain до начала render pass
-    if (m_videoTextureInitialized && m_videoImage != VK_NULL_HANDLE) {
-        // Гарантируем, что источник находится в правильном layout
-        // (updateVideoTexture переводит его в TRANSFER_SRC_OPTIMAL)
-        copyVideoToSwapchain(m_commandBuffers[imageIndex], m_swapchainImages[imageIndex], m_swapchainExtent.width, m_swapchainExtent.height);
+    // Видео будет нарисовано как textured quad внутри render pass (renderStoredVideoBackground)
+    if (m_videoTextureInitialized && m_videoTextureId != 0) {
+        static int videoReadyCounter = 0;
+        if (videoReadyCounter++ % 60 == 0) {
+            std::cout << "[VIDEO] Video texture ready: " << m_videoWidth << "x" << m_videoHeight
+                      << " textureId=" << m_videoTextureId << std::endl;
+        }
+    } else {
+        static int noVideoCounter = 0;
+        if (noVideoCounter++ % 60 == 0) {
+            std::cout << "[VIDEO] No video texture: initialized=" << m_videoTextureInitialized
+                      << " textureId=" << m_videoTextureId << std::endl;
+        }
     }
     
-    // Начинаем render pass (ничего не рисуем, но оставляем для будущих оверлеев)
+    // Начинаем render pass
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_renderPass;
     renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapchainExtent;
-    VkClearValue clearColor = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-    renderPassInfo.clearValueCount = 1;
-    renderPassInfo.pClearValues = &clearColor;
+    std::array<VkClearValue, 2> clearValues{};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[1].depthStencil = {1.0f, 0};
+    renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+    renderPassInfo.pClearValues = clearValues.data();
     vkCmdBeginRenderPass(m_commandBuffers[imageIndex], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 }
 
@@ -1611,7 +1815,40 @@ void VulkanRenderer::renderVideoBackground(const uint8_t* data, uint32_t width, 
 
 void VulkanRenderer::renderStoredVideoBackground()
 {
-    // Для Vulkan видеофон копируется в swapchain в beginFrame
+    if (!m_videoTextureInitialized || m_videoTextureId == 0) return;
+
+    // Aspect-ratio-preserving fullscreen quad (letterbox / pillarbox)
+    float videoAspect = (m_videoWidth > 0 && m_videoHeight > 0)
+        ? static_cast<float>(m_videoWidth) / static_cast<float>(m_videoHeight)
+        : 1.0f;
+    float windowAspect = static_cast<float>(m_swapchainExtent.width) / static_cast<float>(m_swapchainExtent.height);
+
+    float dstW = static_cast<float>(m_swapchainExtent.width);
+    float dstH = static_cast<float>(m_swapchainExtent.height);
+    float dstX = 0.0f;
+    float dstY = 0.0f;
+
+    if (videoAspect > windowAspect) {
+        dstH = dstW / videoAspect;
+        dstY = (m_swapchainExtent.height - dstH) / 2.0f;
+    } else {
+        dstW = dstH * videoAspect;
+        dstX = (m_swapchainExtent.width - dstW) / 2.0f;
+    }
+
+    UITexturePlacement placement{};
+    placement.textureId = m_videoTextureId;
+    placement.width = m_videoWidth;
+    placement.height = m_videoHeight;
+    placement.position = glm::vec3(dstX, dstY, 0.0f);
+    placement.size = glm::vec2(dstW, dstH);
+    placement.billboard = false;
+    placement.enabled = true;
+    // Камера в программе перевернута на 180°
+    placement.rotation = 180.0f;
+
+    // Use overlay pipeline (no depth test) so 3D objects rendered later draw on top
+    renderUITexturedQuad(placement, true);
 }
 
 void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms, 
@@ -1622,31 +1859,355 @@ void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
     
     uint32_t imageIndex = m_currentImageIndex;
     VkCommandBuffer commandBuffer = m_commandBuffers[imageIndex];
-    
+
+    if (m_graphicsPipeline == VK_NULL_HANDLE || m_pipelineLayout == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_swapchainExtent.width);
+    viewport.height = static_cast<float>(m_swapchainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_swapchainExtent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+
     // Рендерим каждый объект
     for (size_t i = 0; i < transforms.size(); i++) {
         uint32_t meshId = meshIds[i];
         if (meshId == 0 || meshId > m_meshes.size()) continue;
         
         const VulkanMesh& mesh = m_meshes[meshId - 1];
-        
-        // Применяем трансформацию (упрощенная версия - без pipeline)
-        // В полноценной реализации нужен graphics pipeline с шейдерами
-        
-        // Пока просто очищаем экран с цветом для демонстрации
-        // В реальной реализации здесь будет vkCmdDrawIndexed
-        (void)mesh;
-        (void)transforms[i];
+
+        VkDeviceSize offsets[] = {0};
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+        glm::mat4 mvp = m_projectionMatrix * m_viewMatrix * transforms[i];
+        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
+
+        vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
     }
-    
-    // Для демонстрации просто рисуем цветной фон
-    // В полноценной реализации здесь будет рендеринг через pipeline
+}
+
+bool VulkanRenderer::createDepthResources()
+{
+    m_depthFormat = findDepthFormat();
+    if (m_depthFormat == VK_FORMAT_UNDEFINED) {
+        return false;
+    }
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = m_swapchainExtent.width;
+    imageInfo.extent.height = m_swapchainExtent.height;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = m_depthFormat;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_device, &imageInfo, nullptr, &m_depthImage) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(m_device, m_depthImage, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_depthImageMemory) != VK_SUCCESS) {
+        vkDestroyImage(m_device, m_depthImage, nullptr);
+        m_depthImage = VK_NULL_HANDLE;
+        return false;
+    }
+
+    vkBindImageMemory(m_device, m_depthImage, m_depthImageMemory, 0);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = m_depthImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = m_depthFormat;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_depthImageView) != VK_SUCCESS) {
+        vkDestroyImage(m_device, m_depthImage, nullptr);
+        vkFreeMemory(m_device, m_depthImageMemory, nullptr);
+        m_depthImage = VK_NULL_HANDLE;
+        m_depthImageMemory = VK_NULL_HANDLE;
+        return false;
+    }
+
+    return true;
+}
+
+VkFormat VulkanRenderer::findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features)
+{
+    for (VkFormat format : candidates) {
+        VkFormatProperties props;
+        vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &props);
+
+        if (tiling == VK_IMAGE_TILING_LINEAR && (props.linearTilingFeatures & features) == features) {
+            return format;
+        }
+        if (tiling == VK_IMAGE_TILING_OPTIMAL && (props.optimalTilingFeatures & features) == features) {
+            return format;
+        }
+    }
+    return VK_FORMAT_UNDEFINED;
+}
+
+VkFormat VulkanRenderer::findDepthFormat()
+{
+    return findSupportedFormat(
+        {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT},
+        VK_IMAGE_TILING_OPTIMAL,
+        VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT
+    );
+}
+
+VkShaderModule VulkanRenderer::createShaderModule(const uint32_t* code, size_t sizeBytes)
+{
+    VkShaderModuleCreateInfo createInfo{};
+    createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+    createInfo.codeSize = sizeBytes;
+    createInfo.pCode = code;
+
+    VkShaderModule shaderModule = VK_NULL_HANDLE;
+    if (vkCreateShaderModule(m_device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+        return VK_NULL_HANDLE;
+    }
+    return shaderModule;
+}
+
+bool VulkanRenderer::createGraphicsPipeline()
+{
+    auto vertCode = ReadBinaryFileWithFallback("mesh.vert.spv");
+    auto fragCode = ReadBinaryFileWithFallback("mesh.frag.spv");
+    if (vertCode.empty() || fragCode.empty()) {
+        return false;
+    }
+
+    VkShaderModule vertShaderModule = createShaderModule(reinterpret_cast<const uint32_t*>(vertCode.data()), vertCode.size());
+    VkShaderModule fragShaderModule = createShaderModule(reinterpret_cast<const uint32_t*>(fragCode.data()), fragCode.size());
+    if (vertShaderModule == VK_NULL_HANDLE || fragShaderModule == VK_NULL_HANDLE) {
+        if (vertShaderModule != VK_NULL_HANDLE) vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+        if (fragShaderModule != VK_NULL_HANDLE) vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+    vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertShaderStageInfo.module = vertShaderModule;
+    vertShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragShaderStageInfo.module = fragShaderModule;
+    fragShaderStageInfo.pName = "main";
+
+    VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
+
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = 8 * sizeof(float);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[0].offset = 0;
+
+    attributeDescriptions[1].binding = 0;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[1].offset = 3 * sizeof(float);
+
+    attributeDescriptions[2].binding = 0;
+    attributeDescriptions[2].location = 2;
+    attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[2].offset = 6 * sizeof(float);
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.depthClampEnable = VK_FALSE;
+    rasterizer.rasterizerDiscardEnable = VK_FALSE;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    rasterizer.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.sampleShadingEnable = VK_FALSE;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_TRUE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+    depthStencil.depthBoundsTestEnable = VK_FALSE;
+    depthStencil.stencilTestEnable = VK_FALSE;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    colorBlendAttachment.blendEnable = VK_FALSE;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.logicOpEnable = VK_FALSE;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    std::array<VkDynamicState, 2> dynamicStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
+    dynamicState.pDynamicStates = dynamicStates.data();
+
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::mat4);
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
+    if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
+        vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+        vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+        return false;
+    }
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = shaderStages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_pipelineLayout;
+    pipelineInfo.renderPass = m_renderPass;
+    pipelineInfo.subpass = 0;
+
+    bool ok = (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) == VK_SUCCESS);
+
+    vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
+    vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
+
+    return ok;
 }
 
 void VulkanRenderer::setCameraMatrix(const glm::mat4& view, const glm::mat4& projection)
 {
     m_viewMatrix = view;
     m_projectionMatrix = projection;
+}
+
+void VulkanRenderer::setDeviceOrientation(float degrees)
+{
+    m_deviceOrientation = degrees;
+}
+
+void VulkanRenderer::setVideoOpacity(float opacity)
+{
+    m_videoOpacity = opacity;
+}
+
+void VulkanRenderer::set3DObjectsOpacity(float opacity)
+{
+    m_3dObjectsOpacity = opacity;
+}
+
+void VulkanRenderer::setUIOverlayTexture(uint32_t textureId, uint32_t width, uint32_t height)
+{
+    m_uiOverlay.textureId = textureId;
+    m_uiOverlay.width = width;
+    m_uiOverlay.height = height;
+    m_uiOverlay.position = glm::vec3(0.0f);
+    m_uiOverlay.size = glm::vec2(static_cast<float>(width), static_cast<float>(height));
+    m_uiOverlay.billboard = false;
+    m_uiOverlay.enabled = (textureId != 0);
+}
+
+void VulkanRenderer::setUI3DTexture(uint32_t textureId, uint32_t width, uint32_t height,
+                                   const glm::vec3& position, const glm::vec2& size, bool billboard)
+{
+    m_ui3D.textureId = textureId;
+    m_ui3D.width = width;
+    m_ui3D.height = height;
+    m_ui3D.position = position;
+    m_ui3D.size = size;
+    m_ui3D.billboard = billboard;
+    m_ui3D.enabled = (textureId != 0);
+}
+
+void VulkanRenderer::renderUIWindows()
+{
+    if (!m_initialized) return;
+    if (m_uiPipelineLayout == VK_NULL_HANDLE || m_uiPipeline == VK_NULL_HANDLE) return;
+    if ((!m_ui3D.enabled) && (!m_uiOverlay.enabled)) return;
+
+    // Called while render pass is active (beginFrame() starts it; endFrame() ends it)
+    VkCommandBuffer cmd = m_commandBuffers[m_currentImageIndex];
+
+    if (m_uiOverlay.enabled) {
+        renderUITexturedQuad(m_uiOverlay, true);
+    }
+    if (m_ui3D.enabled) {
+        renderUITexturedQuad(m_ui3D, false);
+    }
 }
 
 uint32_t VulkanRenderer::createMesh(const std::vector<float>& vertices, 
@@ -1718,17 +2279,533 @@ void VulkanRenderer::destroyMesh(uint32_t meshId)
 
 uint32_t VulkanRenderer::createTexture(const uint8_t* data, uint32_t width, uint32_t height)
 {
-    // TODO: Реализовать создание текстуры
-    (void)data;
-    (void)width;
-    (void)height;
-    return 0;
+    if (!m_initialized || !data || width == 0 || height == 0) return 0;
+
+    VulkanTexture tex{};
+    tex.width = width;
+    tex.height = height;
+
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = {width, height, 1};
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
+    imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
+        return 0;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(m_device, tex.image, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits,
+                                               VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &tex.memory) != VK_SUCCESS) {
+        vkDestroyImage(m_device, tex.image, nullptr);
+        return 0;
+    }
+    vkBindImageMemory(m_device, tex.image, tex.memory, 0);
+
+    transitionImageLayout(tex.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_LAYOUT_PREINITIALIZED, VK_IMAGE_LAYOUT_GENERAL);
+
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = tex.image;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    if (vkCreateImageView(m_device, &viewInfo, nullptr, &tex.view) != VK_SUCCESS) {
+        vkDestroyImage(m_device, tex.image, nullptr);
+        vkFreeMemory(m_device, tex.memory, nullptr);
+        return 0;
+    }
+
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+
+    if (vkCreateSampler(m_device, &samplerInfo, nullptr, &tex.sampler) != VK_SUCCESS) {
+        vkDestroyImageView(m_device, tex.view, nullptr);
+        vkDestroyImage(m_device, tex.image, nullptr);
+        vkFreeMemory(m_device, tex.memory, nullptr);
+        return 0;
+    }
+
+    m_textures.push_back(tex);
+    uint32_t id = m_nextTextureId++;
+    updateTexture(id, data, width, height);
+    return id;
 }
 
 void VulkanRenderer::destroyTexture(uint32_t textureId)
 {
-    // TODO: Реализовать удаление текстуры
-    (void)textureId;
+    if (textureId == 0) return;
+    uint32_t index = textureId - 1;
+    if (index >= m_textures.size()) return;
+
+    VulkanTexture& tex = m_textures[index];
+    if (tex.sampler != VK_NULL_HANDLE) {
+        vkDestroySampler(m_device, tex.sampler, nullptr);
+        tex.sampler = VK_NULL_HANDLE;
+    }
+    if (tex.view != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_device, tex.view, nullptr);
+        tex.view = VK_NULL_HANDLE;
+    }
+    if (tex.image != VK_NULL_HANDLE) {
+        vkDestroyImage(m_device, tex.image, nullptr);
+        tex.image = VK_NULL_HANDLE;
+    }
+    if (tex.memory != VK_NULL_HANDLE) {
+        vkFreeMemory(m_device, tex.memory, nullptr);
+        tex.memory = VK_NULL_HANDLE;
+    }
+    tex.width = 0;
+    tex.height = 0;
+}
+
+void VulkanRenderer::updateTexture(uint32_t textureId, const uint8_t* data, uint32_t width, uint32_t height)
+{
+    if (textureId == 0 || !data || width == 0 || height == 0) return;
+    uint32_t index = textureId - 1;
+    if (index >= m_textures.size()) return;
+
+    VulkanTexture& tex = m_textures[index];
+    if (tex.image == VK_NULL_HANDLE || tex.memory == VK_NULL_HANDLE) return;
+    if (tex.width != width || tex.height != height) {
+        // For now, require fixed size per texture id
+        return;
+    }
+
+    VkImageSubresource subResource{};
+    subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    subResource.mipLevel = 0;
+    subResource.arrayLayer = 0;
+
+    VkSubresourceLayout subResourceLayout;
+    vkGetImageSubresourceLayout(m_device, tex.image, &subResource, &subResourceLayout);
+
+    void* mapped = nullptr;
+    vkMapMemory(m_device, tex.memory, 0, VK_WHOLE_SIZE, 0, &mapped);
+    uint8_t* dst = static_cast<uint8_t*>(mapped) + subResourceLayout.offset;
+
+    const uint32_t srcRowPitch = width * 4;
+    for (uint32_t y = 0; y < height; y++) {
+        memcpy(dst + y * subResourceLayout.rowPitch, data + y * srcRowPitch, srcRowPitch);
+    }
+
+    vkUnmapMemory(m_device, tex.memory);
+}
+
+bool VulkanRenderer::createUIResources()
+{
+    // Descriptor layout
+    VkDescriptorSetLayoutBinding samplerBinding{};
+    samplerBinding.binding = 0;
+    samplerBinding.descriptorCount = 1;
+    samplerBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerBinding.pImmutableSamplers = nullptr;
+    samplerBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &samplerBinding;
+
+    if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_uiDescriptorSetLayout) != VK_SUCCESS) {
+        return false;
+    }
+
+    // Descriptor pool
+    VkDescriptorPoolSize poolSize{};
+    poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSize.descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 1;
+    poolInfo.pPoolSizes = &poolSize;
+    poolInfo.maxSets = 1;
+
+    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_uiDescriptorPool) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_uiDescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_uiDescriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(m_device, &allocInfo, &m_uiDescriptorSet) != VK_SUCCESS) {
+        return false;
+    }
+
+    // Quad geometry (unit quad, centered)
+    struct UIVertex { glm::vec3 pos; glm::vec2 uv; };
+    const std::array<UIVertex, 4> vertices = {
+        UIVertex{{-0.5f, -0.5f, 0.0f}, {0.0f, 1.0f}},
+        UIVertex{{ 0.5f, -0.5f, 0.0f}, {1.0f, 1.0f}},
+        UIVertex{{ 0.5f,  0.5f, 0.0f}, {1.0f, 0.0f}},
+        UIVertex{{-0.5f,  0.5f, 0.0f}, {0.0f, 0.0f}},
+    };
+    const std::array<uint32_t, 6> indices = {0, 1, 2, 2, 3, 0};
+    m_uiIndexCount = static_cast<uint32_t>(indices.size());
+
+    VkDeviceSize vbSize = sizeof(vertices);
+    if (!createBuffer(vbSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      m_uiVertexBuffer, m_uiVertexBufferMemory)) {
+        return false;
+    }
+    void* mapped = nullptr;
+    vkMapMemory(m_device, m_uiVertexBufferMemory, 0, vbSize, 0, &mapped);
+    memcpy(mapped, vertices.data(), static_cast<size_t>(vbSize));
+    vkUnmapMemory(m_device, m_uiVertexBufferMemory);
+
+    VkDeviceSize ibSize = sizeof(indices);
+    if (!createBuffer(ibSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      m_uiIndexBuffer, m_uiIndexBufferMemory)) {
+        return false;
+    }
+    vkMapMemory(m_device, m_uiIndexBufferMemory, 0, ibSize, 0, &mapped);
+    memcpy(mapped, indices.data(), static_cast<size_t>(ibSize));
+    vkUnmapMemory(m_device, m_uiIndexBufferMemory);
+
+    return createUIPipeline();
+}
+
+void VulkanRenderer::destroyUIResources()
+{
+    if (m_uiPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_uiPipeline, nullptr);
+        m_uiPipeline = VK_NULL_HANDLE;
+    }
+    if (m_uiPipelineOverlay != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_uiPipelineOverlay, nullptr);
+        m_uiPipelineOverlay = VK_NULL_HANDLE;
+    }
+    if (m_uiPipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_device, m_uiPipelineLayout, nullptr);
+        m_uiPipelineLayout = VK_NULL_HANDLE;
+    }
+    if (m_uiDescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(m_device, m_uiDescriptorPool, nullptr);
+        m_uiDescriptorPool = VK_NULL_HANDLE;
+    }
+    if (m_uiDescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(m_device, m_uiDescriptorSetLayout, nullptr);
+        m_uiDescriptorSetLayout = VK_NULL_HANDLE;
+    }
+    if (m_uiVertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(m_device, m_uiVertexBuffer, nullptr);
+        vkFreeMemory(m_device, m_uiVertexBufferMemory, nullptr);
+        m_uiVertexBuffer = VK_NULL_HANDLE;
+        m_uiVertexBufferMemory = VK_NULL_HANDLE;
+    }
+    if (m_uiIndexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(m_device, m_uiIndexBuffer, nullptr);
+        vkFreeMemory(m_device, m_uiIndexBufferMemory, nullptr);
+        m_uiIndexBuffer = VK_NULL_HANDLE;
+        m_uiIndexBufferMemory = VK_NULL_HANDLE;
+    }
+    m_uiIndexCount = 0;
+}
+
+static bool ReadBinaryFileWithFallbackUI(const std::string& primaryPath, const std::string& fallbackPath, std::vector<uint32_t>& outWords)
+{
+    auto read = [&](const std::string& p) -> bool {
+        std::ifstream file(p, std::ios::ate | std::ios::binary);
+        if (!file.is_open()) return false;
+        size_t sizeBytes = static_cast<size_t>(file.tellg());
+        if (sizeBytes == 0 || (sizeBytes % 4) != 0) return false;
+        outWords.resize(sizeBytes / 4);
+        file.seekg(0);
+        file.read(reinterpret_cast<char*>(outWords.data()), sizeBytes);
+        return true;
+    };
+    if (read(primaryPath)) return true;
+    return read(fallbackPath);
+}
+
+bool VulkanRenderer::createUIPipeline()
+{
+    // Load shaders from build/shaders_vk/*.spv (with fallback to local path)
+    std::vector<uint32_t> vertCode;
+    std::vector<uint32_t> fragCode;
+
+    bool okV = ReadBinaryFileWithFallbackUI("shaders_vk/ui.vert.spv", "/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/shaders_vk/ui.vert.spv", vertCode);
+    bool okF = ReadBinaryFileWithFallbackUI("shaders_vk/ui.frag.spv", "/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/shaders_vk/ui.frag.spv", fragCode);
+    if (!okV || !okF) {
+        std::cerr << "[VulkanUI] Failed to load ui shaders (.spv)" << std::endl;
+        return false;
+    }
+
+    VkShaderModule vertModule = createShaderModule(vertCode.data(), vertCode.size() * sizeof(uint32_t));
+    VkShaderModule fragModule = createShaderModule(fragCode.data(), fragCode.size() * sizeof(uint32_t));
+    if (vertModule == VK_NULL_HANDLE || fragModule == VK_NULL_HANDLE) {
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo vertStage{};
+    vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStage.module = vertModule;
+    vertStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragStage{};
+    fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStage.module = fragModule;
+    fragStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo stages[] = {vertStage, fragStage};
+
+    // Vertex input
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(glm::vec3) + sizeof(glm::vec2);
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 2> attrs{};
+    attrs[0].binding = 0;
+    attrs[0].location = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    attrs[1].binding = 0;
+    attrs[1].location = 1;
+    attrs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[1].offset = sizeof(glm::vec3);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo raster{};
+    raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    raster.depthClampEnable = VK_FALSE;
+    raster.rasterizerDiscardEnable = VK_FALSE;
+    raster.polygonMode = VK_POLYGON_MODE_FILL;
+    raster.lineWidth = 1.0f;
+    raster.cullMode = VK_CULL_MODE_NONE;
+    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    raster.depthBiasEnable = VK_FALSE;
+
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineColorBlendAttachmentState blendAtt{};
+    blendAtt.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+    blendAtt.blendEnable = VK_TRUE;
+    blendAtt.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    blendAtt.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAtt.colorBlendOp = VK_BLEND_OP_ADD;
+    blendAtt.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    blendAtt.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    blendAtt.alphaBlendOp = VK_BLEND_OP_ADD;
+
+    VkPipelineColorBlendStateCreateInfo blend{};
+    blend.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    blend.logicOpEnable = VK_FALSE;
+    blend.attachmentCount = 1;
+    blend.pAttachments = &blendAtt;
+
+    std::array<VkDynamicState, 2> dynStates = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dyn{};
+    dyn.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dyn.dynamicStateCount = static_cast<uint32_t>(dynStates.size());
+    dyn.pDynamicStates = dynStates.data();
+
+    // Push constants
+    struct Push { glm::mat4 mvp; float opacity; glm::vec3 pad; };
+    VkPushConstantRange pcRange{};
+    pcRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pcRange.offset = 0;
+    pcRange.size = sizeof(Push);
+
+    VkPipelineLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layoutInfo.setLayoutCount = 1;
+    layoutInfo.pSetLayouts = &m_uiDescriptorSetLayout;
+    layoutInfo.pushConstantRangeCount = 1;
+    layoutInfo.pPushConstantRanges = &pcRange;
+
+    if (m_uiPipelineLayout == VK_NULL_HANDLE) {
+        if (vkCreatePipelineLayout(m_device, &layoutInfo, nullptr, &m_uiPipelineLayout) != VK_SUCCESS) {
+            vkDestroyShaderModule(m_device, vertModule, nullptr);
+            vkDestroyShaderModule(m_device, fragModule, nullptr);
+            return false;
+        }
+    }
+
+    auto makePipeline = [&](bool overlayMode, VkPipeline* outPipe) -> bool {
+        VkPipelineDepthStencilStateCreateInfo depth{};
+        depth.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        depth.depthTestEnable = overlayMode ? VK_FALSE : VK_TRUE;
+        depth.depthWriteEnable = VK_FALSE;
+        depth.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        depth.depthBoundsTestEnable = VK_FALSE;
+        depth.stencilTestEnable = VK_FALSE;
+
+        VkGraphicsPipelineCreateInfo pipe{};
+        pipe.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipe.stageCount = 2;
+        pipe.pStages = stages;
+        pipe.pVertexInputState = &vertexInput;
+        pipe.pInputAssemblyState = &inputAssembly;
+        pipe.pViewportState = &viewportState;
+        pipe.pRasterizationState = &raster;
+        pipe.pMultisampleState = &ms;
+        pipe.pDepthStencilState = &depth;
+        pipe.pColorBlendState = &blend;
+        pipe.pDynamicState = &dyn;
+        pipe.layout = m_uiPipelineLayout;
+        pipe.renderPass = m_renderPass;
+        pipe.subpass = 0;
+
+        return vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipe, nullptr, outPipe) == VK_SUCCESS;
+    };
+
+    bool ok = true;
+    if (m_uiPipeline == VK_NULL_HANDLE) {
+        ok = ok && makePipeline(false, &m_uiPipeline);
+    }
+    if (m_uiPipelineOverlay == VK_NULL_HANDLE) {
+        ok = ok && makePipeline(true, &m_uiPipelineOverlay);
+    }
+
+    vkDestroyShaderModule(m_device, vertModule, nullptr);
+    vkDestroyShaderModule(m_device, fragModule, nullptr);
+    return ok;
+}
+
+void VulkanRenderer::updateUIDescriptorSet(uint32_t textureId)
+{
+    if (textureId == 0) return;
+    uint32_t index = textureId - 1;
+    if (index >= m_textures.size()) return;
+    const VulkanTexture& tex = m_textures[index];
+    if (tex.view == VK_NULL_HANDLE || tex.sampler == VK_NULL_HANDLE) return;
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    imageInfo.imageView = tex.view;
+    imageInfo.sampler = tex.sampler;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_uiDescriptorSet;
+    write.dstBinding = 0;
+    write.dstArrayElement = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+}
+
+void VulkanRenderer::renderUITexturedQuad(const UITexturePlacement& placement, bool overlayMode)
+{
+    if (placement.textureId == 0) return;
+
+    VkCommandBuffer cmd = m_commandBuffers[m_currentImageIndex];
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(m_swapchainExtent.width);
+    viewport.height = static_cast<float>(m_swapchainExtent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = m_swapchainExtent;
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    VkPipeline pipe = overlayMode ? m_uiPipelineOverlay : m_uiPipeline;
+    if (pipe == VK_NULL_HANDLE) return;
+
+    updateUIDescriptorSet(placement.textureId);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_uiPipelineLayout, 0, 1, &m_uiDescriptorSet, 0, nullptr);
+
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(cmd, 0, 1, &m_uiVertexBuffer, offsets);
+    vkCmdBindIndexBuffer(cmd, m_uiIndexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+    glm::mat4 mvp(1.0f);
+    if (overlayMode) {
+        // Pixel-space quad pinned to screen (top-left origin) using an ortho projection.
+        float w = static_cast<float>(m_swapchainExtent.width);
+        float h = static_cast<float>(m_swapchainExtent.height);
+        glm::mat4 proj = glm::ortho(0.0f, w, h, 0.0f, -1.0f, 1.0f);
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(placement.position.x + placement.size.x * 0.5f, placement.position.y + placement.size.y * 0.5f, 0.0f));
+        model = glm::rotate(model, glm::radians(placement.rotation), glm::vec3(0.0f, 0.0f, 1.0f));
+        model = glm::scale(model, glm::vec3(placement.size.x, placement.size.y, 1.0f));
+        mvp = proj * model;
+    } else {
+        glm::mat4 viewInverse = glm::inverse(m_viewMatrix);
+        glm::mat4 rotation(1.0f);
+        if (placement.billboard) {
+            rotation = glm::mat4(glm::mat3(viewInverse));
+        }
+        glm::mat4 model = glm::translate(glm::mat4(1.0f), placement.position) * rotation;
+        model = glm::scale(model, glm::vec3(placement.size.x, placement.size.y, 1.0f));
+        mvp = m_projectionMatrix * m_viewMatrix * model;
+    }
+
+    struct Push { glm::mat4 mvp; float opacity; glm::vec3 pad; } pc;
+    pc.mvp = mvp;
+    pc.opacity = 1.0f;
+    pc.pad = glm::vec3(0.0f);
+    vkCmdPushConstants(cmd, m_uiPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push), &pc);
+
+    vkCmdDrawIndexed(cmd, m_uiIndexCount, 1, 0, 0, 0);
 }
 
 // Вспомогательные методы Vulkan
@@ -1761,7 +2838,14 @@ bool VulkanRenderer::createInstance()
 
 bool VulkanRenderer::createSurface()
 {
-    if (glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface) != VK_SUCCESS) {
+    if (!glfwVulkanSupported()) {
+        std::cerr << "GLFW reports Vulkan is not supported on this system" << std::endl;
+        return false;
+    }
+
+    VkResult res = glfwCreateWindowSurface(m_instance, m_window, nullptr, &m_surface);
+    if (res != VK_SUCCESS) {
+        std::cerr << "glfwCreateWindowSurface failed with VkResult=" << static_cast<int>(res) << std::endl;
         return false;
     }
     return true;
@@ -1899,7 +2983,7 @@ bool VulkanRenderer::createSwapchain()
     createInfo.imageColorSpace = surfaceFormat.colorSpace;
     createInfo.imageExtent = m_swapchainExtent;
     createInfo.imageArrayLayers = 1;
-    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     
     uint32_t queueFamilyIndices[] = {m_graphicsQueueFamily, m_presentQueueFamily};
     if (m_graphicsQueueFamily != m_presentQueueFamily) {
@@ -1959,46 +3043,65 @@ bool VulkanRenderer::createImageViews()
 
 bool VulkanRenderer::createRenderPass()
 {
+    m_depthFormat = findDepthFormat();
+
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_swapchainImageFormat;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    // 🔹 CLEAR: видео будет нарисовано как textured quad внутри render pass
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
     colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-    
+
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = m_depthFormat;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkAttachmentReference colorAttachmentRef{};
     colorAttachmentRef.attachment = 0;
     colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    
+
+    VkAttachmentReference depthAttachmentRef{};
+    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &colorAttachmentRef;
-    
-    VkSubpassDependency dependency{};
-    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-    dependency.dstSubpass = 0;
-    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.srcAccessMask = 0;
-    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-    
+    subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+    std::array<VkSubpassDependency, 1> dependencies{};
+    dependencies[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependencies[0].dstSubpass = 0;
+    dependencies[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependencies[0].srcAccessMask = 0;
+    dependencies[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
+    std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-    renderPassInfo.attachmentCount = 1;
-    renderPassInfo.pAttachments = &colorAttachment;
+    renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+    renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
-    renderPassInfo.dependencyCount = 1;
-    renderPassInfo.pDependencies = &dependency;
-    
+    renderPassInfo.dependencyCount = static_cast<uint32_t>(dependencies.size());
+    renderPassInfo.pDependencies = dependencies.data();
+
     if (vkCreateRenderPass(m_device, &renderPassInfo, nullptr, &m_renderPass) != VK_SUCCESS) {
         return false;
     }
-    
+
     return true;
 }
 
@@ -2007,12 +3110,12 @@ bool VulkanRenderer::createFramebuffers()
     m_swapchainFramebuffers.resize(m_swapchainImageViews.size());
     
     for (size_t i = 0; i < m_swapchainImageViews.size(); i++) {
-        VkImageView attachments[] = {m_swapchainImageViews[i]};
+        VkImageView attachments[] = {m_swapchainImageViews[i], m_depthImageView};
         
         VkFramebufferCreateInfo framebufferInfo{};
         framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
         framebufferInfo.renderPass = m_renderPass;
-        framebufferInfo.attachmentCount = 1;
+        framebufferInfo.attachmentCount = 2;
         framebufferInfo.pAttachments = attachments;
         framebufferInfo.width = m_swapchainExtent.width;
         framebufferInfo.height = m_swapchainExtent.height;
@@ -2099,12 +3202,38 @@ void VulkanRenderer::recreateSwapchain()
     vkDeviceWaitIdle(m_device);
     
     cleanupSwapchain();
+
+    if (m_depthImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(m_device, m_depthImageView, nullptr);
+        m_depthImageView = VK_NULL_HANDLE;
+    }
+    if (m_depthImage != VK_NULL_HANDLE) {
+        vkDestroyImage(m_device, m_depthImage, nullptr);
+        vkFreeMemory(m_device, m_depthImageMemory, nullptr);
+        m_depthImage = VK_NULL_HANDLE;
+        m_depthImageMemory = VK_NULL_HANDLE;
+    }
     
     glfwGetWindowSize(m_window, &m_width, &m_height);
     
     createSwapchain();
     createImageViews();
+    createDepthResources();
     createFramebuffers();
+
+    destroyUIResources();
+
+    if (m_graphicsPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
+        m_graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (m_pipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
+        m_pipelineLayout = VK_NULL_HANDLE;
+    }
+    createGraphicsPipeline();
+
+    createUIResources();
 }
 
 bool VulkanRenderer::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
@@ -2188,118 +3317,46 @@ uint32_t VulkanRenderer::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFla
 
 bool VulkanRenderer::createVideoTexture(uint32_t width, uint32_t height)
 {
-    VkImageCreateInfo imageInfo{};
-    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-    imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent.width = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.format = VK_FORMAT_R8G8B8_UNORM;
-    imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
-    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    
-    if (vkCreateImage(m_device, &imageInfo, nullptr, &m_videoImage) != VK_SUCCESS) {
-        return false;
-    }
-    
-    VkMemoryRequirements memRequirements;
-    vkGetImageMemoryRequirements(m_device, m_videoImage, &memRequirements);
-    
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, 
-                                                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    
-    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_videoImageMemory) != VK_SUCCESS) {
-        vkDestroyImage(m_device, m_videoImage, nullptr);
-        return false;
-    }
-    
-    vkBindImageMemory(m_device, m_videoImage, m_videoImageMemory, 0);
-    
-    // Создаем image view
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = m_videoImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_R8G8B8_UNORM;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
-    
-    if (vkCreateImageView(m_device, &viewInfo, nullptr, &m_videoImageView) != VK_SUCCESS) {
-        vkDestroyImage(m_device, m_videoImage, nullptr);
-        vkFreeMemory(m_device, m_videoImageMemory, nullptr);
-        return false;
-    }
-    
-    // Создаем sampler
-    VkSamplerCreateInfo samplerInfo{};
-    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-    samplerInfo.magFilter = VK_FILTER_LINEAR;
-    samplerInfo.minFilter = VK_FILTER_LINEAR;
-    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
-    samplerInfo.anisotropyEnable = VK_FALSE;
-    samplerInfo.maxAnisotropy = 1.0f;
-    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-    samplerInfo.unnormalizedCoordinates = VK_FALSE;
-    samplerInfo.compareEnable = VK_FALSE;
-    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-    samplerInfo.mipLodBias = 0.0f;
-    samplerInfo.minLod = 0.0f;
-    samplerInfo.maxLod = 0.0f;
-    
-    if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_videoSampler) != VK_SUCCESS) {
-        vkDestroyImageView(m_device, m_videoImageView, nullptr);
-        vkDestroyImage(m_device, m_videoImage, nullptr);
-        vkFreeMemory(m_device, m_videoImageMemory, nullptr);
-        return false;
-    }
-    // Переводим видеоизображение в layout источника копирования (для дальнейших копий)
-    transitionImageLayout(m_videoImage, VK_FORMAT_R8G8B8_UNORM, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    std::cout << "[VIDEO] Creating video texture: " << width << "x" << height << std::endl;
 
+    // createTexture expects RGBA data
+    std::vector<uint8_t> emptyRgba(static_cast<size_t>(width) * height * 4, 0);
+    m_videoTextureId = createTexture(emptyRgba.data(), width, height);
+    if (m_videoTextureId == 0) {
+        std::cerr << "[VIDEO] Failed to create video texture via createTexture" << std::endl;
+        return false;
+    }
+
+    m_videoWidth = width;
+    m_videoHeight = height;
+    m_videoTextureInitialized = true;
+
+    std::cout << "[VIDEO] Video texture created with ID: " << m_videoTextureId << std::endl;
     return true;
 }
 
 void VulkanRenderer::updateVideoTexture(const uint8_t* data, uint32_t width, uint32_t height)
 {
-    if (!m_videoImage || !data) return;
-    
-    // Получаем требования к памяти для изображения
-    VkImageSubresource subResource{};
-    subResource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    subResource.mipLevel = 0;
-    subResource.arrayLayer = 0;
-    
-    VkSubresourceLayout subResourceLayout;
-    vkGetImageSubresourceLayout(m_device, m_videoImage, &subResource, &subResourceLayout);
-    
-    // Копируем данные в память изображения
-    void* mapped;
-    vkMapMemory(m_device, m_videoImageMemory, 0, VK_WHOLE_SIZE, 0, &mapped);
-    
-    uint8_t* dst = static_cast<uint8_t*>(mapped) + subResourceLayout.offset;
-    const uint32_t rowPitch = width * 3; // RGB
-    
-    for (uint32_t y = 0; y < height; y++) {
-        memcpy(dst + y * subResourceLayout.rowPitch, 
-               data + y * rowPitch, 
-               rowPitch);
+    if (m_videoTextureId == 0 || !data) return;
+
+    if (width != m_videoWidth || height != m_videoHeight) {
+        // Recreate texture if dimensions changed
+        destroyTexture(m_videoTextureId);
+        m_videoTextureId = 0;
+        m_videoTextureInitialized = false;
+        if (!createVideoTexture(width, height)) return;
     }
-    
-    vkUnmapMemory(m_device, m_videoImageMemory);
-    // Layout уже установлен в TRANSFER_SRC_OPTIMAL при создании
+
+    // Convert RGB → RGBA (createTexture/updateTexture expect RGBA)
+    std::vector<uint8_t> rgba(static_cast<size_t>(width) * height * 4);
+    for (uint32_t i = 0; i < width * height; i++) {
+        rgba[i * 4 + 0] = data[i * 3 + 0];
+        rgba[i * 4 + 1] = data[i * 3 + 1];
+        rgba[i * 4 + 2] = data[i * 3 + 2];
+        rgba[i * 4 + 3] = 255;
+    }
+
+    updateTexture(m_videoTextureId, rgba.data(), width, height);
 }
 #endif
 
@@ -2343,6 +3400,11 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
         sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
         destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_PREINITIALIZED && newLayout == VK_IMAGE_LAYOUT_GENERAL) {
+        barrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_HOST_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
     } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
         barrier.srcAccessMask = 0;
         barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -2391,85 +3453,7 @@ void VulkanRenderer::transitionImageLayout(VkImage image, VkFormat /*format*/, V
     vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
 }
 
-void VulkanRenderer::copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t width, uint32_t height)
-{
-    // Переводим swapchain в layout для назначения копирования
-    VkImageMemoryBarrier toDst{};
-    toDst.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toDst.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    toDst.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toDst.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toDst.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toDst.image = dstSwapchainImage;
-    toDst.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toDst.subresourceRange.baseMipLevel = 0;
-    toDst.subresourceRange.levelCount = 1;
-    toDst.subresourceRange.baseArrayLayer = 0;
-    toDst.subresourceRange.layerCount = 1;
-    toDst.srcAccessMask = 0;
-    toDst.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-    vkCmdPipelineBarrier(
-        cmd,
-        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &toDst
-    );
-
-    // Регион копирования (matching the smaller side, simple stretch to fit)
-    VkImageCopy copyRegion{};
-    copyRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.srcSubresource.mipLevel = 0;
-    copyRegion.srcSubresource.baseArrayLayer = 0;
-    copyRegion.srcSubresource.layerCount = 1;
-    copyRegion.srcOffset = {0, 0, 0};
-
-    copyRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    copyRegion.dstSubresource.mipLevel = 0;
-    copyRegion.dstSubresource.baseArrayLayer = 0;
-    copyRegion.dstSubresource.layerCount = 1;
-    copyRegion.dstOffset = {0, 0, 0};
-
-    copyRegion.extent.width = std::min(width, m_swapchainExtent.width);
-    copyRegion.extent.height = std::min(height, m_swapchainExtent.height);
-    copyRegion.extent.depth = 1;
-
-    vkCmdCopyImage(
-        cmd,
-        m_videoImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
-        dstSwapchainImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-        1, &copyRegion
-    );
-
-    // Возвращаем swapchain изображение в layout для color attachment
-    VkImageMemoryBarrier toColor{};
-    toColor.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    toColor.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-    toColor.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    toColor.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toColor.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    toColor.image = dstSwapchainImage;
-    toColor.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-    toColor.subresourceRange.baseMipLevel = 0;
-    toColor.subresourceRange.levelCount = 1;
-    toColor.subresourceRange.baseArrayLayer = 0;
-    toColor.subresourceRange.layerCount = 1;
-    toColor.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-    toColor.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-
-    vkCmdPipelineBarrier(
-        cmd,
-        VK_PIPELINE_STAGE_TRANSFER_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        0,
-        0, nullptr,
-        0, nullptr,
-        1, &toColor
-    );
-}
+// copyVideoToSwapchain removed - video is now rendered as a textured quad inside the render pass
 #endif
 
 std::unique_ptr<Renderer> createRenderer(bool useVulkan)

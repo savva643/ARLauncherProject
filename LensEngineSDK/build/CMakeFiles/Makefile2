@@ -54,10 +54,10 @@ RM = /usr/bin/cmake -E rm -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK
+CMAKE_SOURCE_DIR = /home/savva/Documents/ARLauncherProject/LensEngineSDK
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build
+CMAKE_BINARY_DIR = /home/savva/Documents/ARLauncherProject/LensEngineSDK/build
 
 #=============================================================================
 # Directory level rules for the build root directory
@@ -81,14 +81,14 @@ clean: CMakeFiles/LensEngineSDK.dir/clean
 CMakeFiles/LensEngineSDK.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/LensEngineSDK.dir/build.make CMakeFiles/LensEngineSDK.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/LensEngineSDK.dir/build.make CMakeFiles/LensEngineSDK.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8 "Built target LensEngineSDK"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/savva/Documents/ARLauncherProject/LensEngineSDK/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8 "Built target LensEngineSDK"
 .PHONY : CMakeFiles/LensEngineSDK.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/LensEngineSDK.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles 8
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/LensEngineSDK/build/CMakeFiles 8
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/LensEngineSDK.dir/all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/GitHub/ARLauncherProject/LensEngineSDK/build/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/savva/Documents/ARLauncherProject/LensEngineSDK/build/CMakeFiles 0
 .PHONY : CMakeFiles/LensEngineSDK.dir/rule
 
 # Convenience name for target.

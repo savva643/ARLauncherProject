@@ -97,6 +97,16 @@ private:
     // Стабилизация
     std::vector<CameraPose> m_poseHistory;
     float calculateStability() const;
+    
+    // Детекция неподвижности (для отслеживания состояния)
+    bool m_wasStationary;
+
+    // VO tracking: primary position source (no ARKit — pure sensors)
+    glm::vec3 m_lastVOPosition;
+    glm::vec3 m_voPosition;
+    bool m_hasVOUpdate = false;
+    double m_voDt = 0.033; // ~30 FPS default
+    uint64_t m_lastVOTime = 0;
 
     // Потокобезопасность
     mutable std::mutex m_mutex;

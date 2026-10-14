@@ -90,7 +90,7 @@ fi
 echo "✅ LensEngineSDK built successfully"
 echo ""
 
-# 3. Сборка ARLauncher (CMake) с Vulkan
+# 3. Сборка ARLauncher (CMake) с OpenGL
 echo "========================================"
 echo "Step 3: Building ARLauncher (OpenGL)"
 echo "========================================"
@@ -113,6 +113,13 @@ LENS_ENGINE_SDK_DIR="../../LensEngineSDK"
 if [ ! -f "$SENSOR_CONNECTOR_LIB" ]; then
     echo "❌ SensorConnector library not found at $SENSOR_CONNECTOR_LIB"
     exit 1
+fi
+
+# Проверка наличия FreeType
+if ! pkg-config --exists freetype2 2>/dev/null; then
+    echo "⚠️  FreeType not found. Installing libfreetype6-dev..."
+    echo "   Run: sudo apt-get install libfreetype6-dev"
+    echo "   Text rendering will be limited without FreeType"
 fi
 
 # Конфигурация CMake с OpenGL и SensorConnector
@@ -146,4 +153,3 @@ echo "🚀 To run ARLauncher:"
 echo "   cd ARLauncher/build/bin"
 echo "   ./ARLauncher"
 echo ""
-

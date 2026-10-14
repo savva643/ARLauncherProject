@@ -39,7 +39,8 @@ public:
     virtual void set3DObjectsOpacity(float opacity) = 0;
     
     virtual void setCameraMatrix(const glm::mat4& view, const glm::mat4& projection) = 0;
-    
+    virtual void setDeviceOrientation(float degrees) {}
+
     // Утилиты
     virtual uint32_t createMesh(const std::vector<float>& vertices, 
                                 const std::vector<uint32_t>& indices) = 0;
@@ -49,6 +50,13 @@ public:
     virtual void destroyTexture(uint32_t textureId) = 0;
 
     virtual void renderUIWindows() {}
+
+    virtual uint32_t createUIWindow(const std::string& title,
+                                      const std::string& subtitle,
+                                      const glm::vec3& position,
+                                      const glm::vec2& size,
+                                      bool hasButton = false,
+                                      const std::string& buttonText = "") { return 0; }
     
     // Получение размеров окна
     void getWindowSize(int& width, int& height) const;
@@ -80,21 +88,38 @@ public:
                         const std::vector<uint32_t>& meshIds) override;
     
     void setCameraMatrix(const glm::mat4& view, const glm::mat4& projection) override;
-    
-    uint32_t createMesh(const std::vector<float>& vertices, 
+    void setDeviceOrientation(float degrees) override;
+
+    uint32_t createMesh(const std::vector<float>& vertices,
                        const std::vector<uint32_t>& indices) override;
     void destroyMesh(uint32_t meshId) override;
-    
+
     uint32_t createTexture(const uint8_t* data, uint32_t width, uint32_t height) override;
     void destroyTexture(uint32_t textureId) override;
+
+    void updateTexture(uint32_t textureId, const uint8_t* data, uint32_t width, uint32_t height);
     
     void setVideoOpacity(float opacity) override;
     void set3DObjectsOpacity(float opacity) override;
 
+    void setUIOverlayTexture(uint32_t textureId, uint32_t width, uint32_t height);
+    void setUI3DTexture(uint32_t textureId, uint32_t width, uint32_t height,
+                        const glm::vec3& position, const glm::vec2& size, bool billboard);
+
+    void renderUIWindows() override;
+
+    uint32_t createUIWindow(const std::string& title,
+                            const std::string& subtitle,
+                            const glm::vec3& position,
+                            const glm::vec2& size,
+                            bool hasButton = false,
+                            const std::string& buttonText = "") override;
+
 private:
     glm::mat4 m_viewMatrix;
     glm::mat4 m_projectionMatrix;
-    
+    float m_deviceOrientation = 0.0f;
+
     // Vulkan объекты
     VkInstance m_instance;
     VkPhysicalDevice m_physicalDevice;
@@ -112,6 +137,16 @@ private:
     VkRenderPass m_renderPass;
     VkRenderPass m_renderPassWithLoad; // Render pass с LOAD_OP_LOAD для видео фона
     std::vector<VkFramebuffer> m_swapchainFramebuffers;
+
+    // Depth resources
+    VkImage m_depthImage;
+    VkDeviceMemory m_depthImageMemory;
+    VkImageView m_depthImageView;
+    VkFormat m_depthFormat;
+
+    // Graphics pipeline for meshes
+    VkPipelineLayout m_pipelineLayout;
+    VkPipeline m_graphicsPipeline;
     VkCommandPool m_commandPool;
     std::vector<VkCommandBuffer> m_commandBuffers;
     std::vector<VkSemaphore> m_imageAvailableSemaphores;
@@ -132,16 +167,51 @@ private:
     std::vector<VulkanMesh> m_meshes;
     uint32_t m_nextMeshId;
     
-    // Видео текстура для RGB камеры
-    VkImage m_videoImage;
-    VkDeviceMemory m_videoImageMemory;
-    VkImageView m_videoImageView;
-    VkSampler m_videoSampler;
+    // Видео текстура для RGB камеры (Vulkan textured quad)
+    uint32_t m_videoTextureId;
     bool m_videoTextureInitialized;
     float m_videoOpacity;  // Opacity для видео фона (0.0 - 1.0)
     float m_3dObjectsOpacity;  // Opacity для 3D объектов (0.0 - 1.0)
     uint32_t m_videoWidth;  // Ширина видео текстуры
     uint32_t m_videoHeight; // Высота видео текстуры
+
+    struct VulkanTexture {
+        VkImage image;
+        VkDeviceMemory memory;
+        VkImageView view;
+        VkSampler sampler;
+        uint32_t width;
+        uint32_t height;
+    };
+    std::vector<VulkanTexture> m_textures;
+    uint32_t m_nextTextureId;
+
+    struct UITexturePlacement {
+        uint32_t textureId;
+        uint32_t width;
+        uint32_t height;
+        glm::vec3 position;
+        glm::vec2 size;
+        bool billboard;
+        bool enabled;
+        float rotation = 0.0f; // Z-rotation in degrees (for video orientation)
+    };
+    UITexturePlacement m_ui3D;
+    UITexturePlacement m_uiOverlay;
+
+    VkDescriptorSetLayout m_uiDescriptorSetLayout;
+    VkDescriptorPool m_uiDescriptorPool;
+    VkDescriptorSet m_uiDescriptorSet;
+    VkPipelineLayout m_uiPipelineLayout;
+    VkPipeline m_uiPipeline;
+    VkPipeline m_uiPipelineOverlay;
+    VkBuffer m_uiVertexBuffer;
+    VkDeviceMemory m_uiVertexBufferMemory;
+    VkBuffer m_uiIndexBuffer;
+    VkDeviceMemory m_uiIndexBufferMemory;
+    uint32_t m_uiIndexCount;
+
+    class FontRenderer* m_fontRenderer;
     
     // Вспомогательные методы для создания буферов
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, 
@@ -162,13 +232,23 @@ private:
     bool createCommandPool();
     bool createCommandBuffers();
     bool createSyncObjects();
+    bool createDepthResources();
+    VkFormat findSupportedFormat(const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
+    VkFormat findDepthFormat();
+    bool createGraphicsPipeline();
+    VkShaderModule createShaderModule(const uint32_t* code, size_t sizeBytes);
     void cleanupSwapchain();
     void recreateSwapchain();
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
-    // Image operations for background blit path (no graphics pipeline required)
+    bool createUIResources();
+    void destroyUIResources();
+    bool createUIPipeline();
+    void updateUIDescriptorSet(uint32_t textureId);
+    void renderUITexturedQuad(const UITexturePlacement& placement, bool overlayMode);
+
+    // Image operations
     void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
-    void copyVideoToSwapchain(VkCommandBuffer cmd, VkImage dstSwapchainImage, uint32_t width, uint32_t height);
 };
 #endif
 
@@ -204,13 +284,16 @@ public:
     void set3DObjectsOpacity(float opacity) override;
 
     void renderUIWindows() override;
+    
+    // Получение FontRenderer для использования в Text элементах
+    class FontRenderer* getFontRenderer() const { return m_fontRenderer; }
 
     uint32_t createUIWindow(const std::string& title,
                             const std::string& subtitle,
                             const glm::vec3& position,
                             const glm::vec2& size,
                             bool hasButton = false,
-                            const std::string& buttonText = "");
+                            const std::string& buttonText = "") override;
 
 private:
     struct UIWindow {

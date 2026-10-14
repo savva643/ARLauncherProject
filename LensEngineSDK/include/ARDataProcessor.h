@@ -5,6 +5,10 @@
 #include "SensorFusionEKF.h"
 #include "Lidar3DProcessor.h"
 #include "CameraController.h"
+#include "KalmanFilter6DOF.h"
+#include "BundleAdjustment.h"
+#include "NVisionFeatureDetector.h"
+#include "SHLightEstimator.h"
 #include <vector>
 #include <memory>
 #include <functional>
@@ -12,6 +16,8 @@
 #include <string>
 
 #include "SpatialMappingSystem.h"
+#include <queue>
+#include <mutex>
 
 namespace LensEngine {
 
@@ -33,12 +39,23 @@ public:
     CameraPose processVisualOdometry(const RGBImage &currentFrame,
                                      const RGBImage &previousFrame,
                                      const std::vector<FeaturePoint> &previousFeatures);
+    
+    // Улучшенная визуальная одометрия с триангуляцией
+    CameraPose processVisualOdometryFixed(const RGBImage &currentFrame,
+                                          const RGBImage &previousFrame,
+                                          const std::vector<FeaturePoint> &previousFeatures);
 
     // Обработка IMU
     void processIMUData(const RawIMUData &imuData);
 
     // Установка контроллера камеры
     void setCameraController(CameraController* controller);
+    
+    // Установка Kalman Filter для 6DOF tracking
+    void setKalmanFilter(KalmanFilter6DOF* kalmanFilter);
+
+    // Установка калибровки камеры (от iPhone)
+    void setCameraIntrinsics(double fx, double fy, double cx, double cy);
 
     // Асинхронная обработка полного кадра
     void processFrameAsync(const ARFrame &frame);
@@ -67,8 +84,12 @@ public:
 private:
     std::unique_ptr<SensorFusionEKF> m_sensorFusion;
     std::vector<FeaturePoint> m_previousFeatures;
+    std::vector<FeaturePoint> m_trackedFeatures; // optical flow tracked points for next frame
     RGBImage m_previousFrame;
     CameraPose m_previousPose;
+
+    // Camera intrinsics (from iPhone calibration)
+    double m_fx = 1312.0, m_fy = 1312.0, m_cx = 960.0, m_cy = 540.0;
 
     // Асинхронная обработка
     std::future<void> m_processingFuture;
@@ -81,6 +102,16 @@ private:
     LightEstimation estimateLightFast(const RGBImage &rgbImage);
 
     CameraController* m_cameraController;
+    KalmanFilter6DOF* m_kalmanFilter = nullptr;  // 6DOF Kalman filter
+    std::unique_ptr<BundleAdjustment> m_bundleAdjustment;  // Bundle adjustment
+    std::unique_ptr<NVisionFeatureDetector> m_featureDetector;  // FAST/ORB feature detection
+    std::unique_ptr<SHLightEstimator> m_lightEstimator;  // Spherical-harmonic light estimation
+    
+    int m_frameCount = 0;  // Frame counter for Bundle Adjustment
+    
+    // Frame queue для предотвращения потери кадров
+    std::queue<ARFrame> m_frameQueue;
+    std::mutex m_frameQueueMutex;
     
     // Колбэки
     FrameProcessedCallback m_frameProcessedCallback;

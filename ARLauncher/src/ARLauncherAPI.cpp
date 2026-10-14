@@ -38,13 +38,7 @@ uint32_t ARLauncherAPI::createWindow(const std::string& title,
         return 0;
     }
 
-    auto* glRenderer = dynamic_cast<OpenGLRenderer*>(renderer);
-    if (!glRenderer) {
-        std::cerr << "ARLauncherAPI::createWindow: OpenGL renderer required" << std::endl;
-        return 0;
-    }
-
-    return glRenderer->createUIWindow(title, subtitle, position, size, false, std::string());
+    return renderer->createUIWindow(title, subtitle, position, size, false, std::string());
 }
 
 uint32_t ARLauncherAPI::createButton(const std::string& label,
@@ -56,15 +50,9 @@ uint32_t ARLauncherAPI::createButton(const std::string& label,
         return 0;
     }
 
-    auto* glRenderer = dynamic_cast<OpenGLRenderer*>(renderer);
-    if (!glRenderer) {
-        std::cerr << "ARLauncherAPI::createButton: OpenGL renderer required" << std::endl;
-        return 0;
-    }
-
     glm::vec2 panelSize(0.6f, 0.35f);
     std::string subtitle = "Interactive control";
-    return glRenderer->createUIWindow(label, subtitle, position, panelSize, true, label);
+    return renderer->createUIWindow(label, subtitle, position, panelSize, true, label);
 }
 
 uint32_t ARLauncherAPI::createText(const std::string& text,
@@ -76,14 +64,8 @@ uint32_t ARLauncherAPI::createText(const std::string& text,
         return 0;
     }
 
-    auto* glRenderer = dynamic_cast<OpenGLRenderer*>(renderer);
-    if (!glRenderer) {
-        std::cerr << "ARLauncherAPI::createText: OpenGL renderer required" << std::endl;
-        return 0;
-    }
-
     glm::vec2 panelSize(0.8f, 0.25f);
-    return glRenderer->createUIWindow(text, "", position, panelSize, false, std::string());
+    return renderer->createUIWindow(text, "", position, panelSize, false, std::string());
 }
 
 uint32_t ARLauncherAPI::createModel(const std::string& /*name*/,

@@ -46,6 +46,22 @@ NetworkServerSimplified::NetworkServerSimplified(QObject *parent)
             this, &NetworkServerSimplified::handleUsbRawLidarPointCloud, Qt::QueuedConnection);
     connect(m_usbManager, &UsbManager::usbLidarConfidenceMapReceived,
             this, &NetworkServerSimplified::handleUsbLidarConfidenceMap, Qt::QueuedConnection);
+    connect(m_usbManager, &UsbManager::usbOrientationDataReceived,
+            this, &NetworkServerSimplified::handleUsbOrientationData, Qt::QueuedConnection);
+
+    // 🔹 Подключаем USB статус к clientsCountChanged для обновления UI
+    connect(m_usbManager, &UsbManager::usbClientConnected,
+            this, [this]() {
+                m_clientsCount += 1;
+                emit clientsCountChanged(m_clientsCount);
+                emit statusChanged("USB Client connected");
+            });
+    connect(m_usbManager, &UsbManager::usbClientDisconnected,
+            this, [this]() {
+                m_clientsCount = qMax(0, m_clientsCount - 1);
+                emit clientsCountChanged(m_clientsCount);
+                emit statusChanged("USB Client disconnected");
+            });
     
     m_statsTimer.start();
     
@@ -139,6 +155,11 @@ void NetworkServerSimplified::stopServers()
     m_clientsCount = 0;
     emit statusChanged(m_serverStatus);
     emit clientsCountChanged(m_clientsCount);
+}
+
+bool NetworkServerSimplified::isUsbConnected() const
+{
+    return m_usbManager ? m_usbManager->isUsbConnected() : false;
 }
 
 void NetworkServerSimplified::handleTcpConnection()
@@ -280,6 +301,12 @@ void NetworkServerSimplified::handleUsbLidarConfidenceMap(const QByteArray &data
 {
     // Тип 0x09 - LiDAR Confidence Map
     processRawData(SensorConnector::LIDAR_DEPTH, data, sequenceNumber); // Используем LIDAR_DEPTH как базовый тип
+}
+
+void NetworkServerSimplified::handleUsbOrientationData(const QByteArray &data, quint64 sequenceNumber)
+{
+    // Тип 0x0A - Device Orientation
+    processRawData(SensorConnector::DEVICE_ORIENTATION, data, sequenceNumber);
 }
 
 void NetworkServerSimplified::handleTurboImageDecoded(const QImage &image, int dataSize, quint64 sequenceNumber)

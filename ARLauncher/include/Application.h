@@ -17,6 +17,7 @@ namespace SensorConnector {
     class SensorConnectorCore;
 }
 #include <QtCore/QtGlobal>
+#include <QImage>
 #endif
 class Button;
 class Text;
@@ -26,6 +27,7 @@ class Scene;
 class UIRenderer;
 class ARLauncherAPI;
 class FontRenderer;
+class LiDARVisualizer;
 
 /**
  * @brief Главный класс приложения ARLauncher
@@ -76,6 +78,7 @@ private:
     std::unique_ptr<ARLauncherAPI> m_launcherAPI;
     std::unique_ptr<LensEngine::LensEngineAPI> m_lensEngine;
     std::unique_ptr<FontRenderer> m_fontRenderer;
+    std::unique_ptr<LiDARVisualizer> m_lidarVisualizer;
 #ifdef USE_SENSOR_CONNECTOR
     std::unique_ptr<SensorConnector::SensorConnectorCore> m_sensorConnector;
 #endif
@@ -106,6 +109,20 @@ private:
     glm::quat m_currentCameraRotation; // Текущая интерполированная ротация
     float m_lastIMUUpdateTime;
     bool m_positionInitialized;
+    float m_deviceOrientation = 0.0f;  // Угол ориентации устройства (0/90/180/270)
+    
+    // 🔹 Указатели на UI тексты для обновления
+    std::shared_ptr<Text> m_connectionText;
+    std::shared_ptr<Text> m_imuText;
+    std::shared_ptr<Text> m_fpsText;
+    std::shared_ptr<Text> m_videoFpsText;
+    std::shared_ptr<Text> m_rotationText;
+    std::shared_ptr<Text> m_positionText;
+    float m_currentFps = 0.0f;
+    
+    // Depth map overlay
+    QImage m_depthOverlay;
+    bool m_hasDepthOverlay = false;
 #endif
 };
 

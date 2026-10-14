@@ -108,7 +108,9 @@ endif()
 # LensEngineSDK
 set(LENSENGINE_SDK_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../LensEngineSDK")
 if(EXISTS "${LENSENGINE_SDK_DIR}/CMakeLists.txt")
+    set(CMAKE_DISABLE_FIND_PACKAGE_Qt5 TRUE)
     add_subdirectory(${LENSENGINE_SDK_DIR} ${CMAKE_BINARY_DIR}/LensEngineSDK)
+    unset(CMAKE_DISABLE_FIND_PACKAGE_Qt5)
     set(LENSENGINE_LIB LensEngineSDK)
 else()
     message(WARNING "LensEngineSDK not found, building without it")
@@ -130,6 +132,7 @@ set(ARLAUNCHER_SOURCES
     src/Camera.cpp
     src/ARLauncherAPI.cpp
     src/FontRenderer.cpp
+    src/LiDARVisualizer.cpp
     ui/UIRenderer.cpp
     ui/UIElement.cpp
     ui/Window.cpp
@@ -146,6 +149,7 @@ set(ARLAUNCHER_HEADERS
     include/Camera.h
     include/ARLauncherAPI.h
     include/FontRenderer.h
+    include/LiDARVisualizer.h
     ui/UIRenderer.h
     ui/UIElement.h
     ui/Window.h
@@ -208,6 +212,17 @@ if(LENSENGINE_LIB)
     target_include_directories(ARLauncher PRIVATE ${LENSENGINE_SDK_DIR}/include)
 endif()
 
+# PCL/Eigen for DLOTracker (static lib needs these propagated)
+find_package(Eigen3 QUIET)
+if(Eigen3_FOUND)
+    target_link_libraries(ARLauncher PRIVATE Eigen3::Eigen)
+endif()
+# Link ONLY core PCL libs (avoid VTK/Qt5 transitive deps)
+target_link_libraries(ARLauncher PRIVATE
+    pcl_common pcl_filters pcl_registration pcl_kdtree pcl_search pcl_features
+)
+target_include_directories(ARLauncher PRIVATE /usr/include/pcl-1.14 /usr/include/eigen3)
+
 # GLM include директории
 if(GLM_INCLUDE_DIR)
     target_include_directories(ARLauncher PRIVATE ${GLM_INCLUDE_DIR})
@@ -242,7 +257,7 @@ endif()
 # ВНИМАНИЕ: SensorConnector должен быть собран с той же версией Qt, что и ARLauncher
 # Сейчас SensorConnector собран с Qt5, а ARLauncher использует Qt6
 # Для подключения нужно пересобрать SensorConnector с Qt6
-option(USE_SENSOR_CONNECTOR "Use SensorConnector library" OFF)
+option(USE_SENSOR_CONNECTOR "Use SensorConnector library" ON)
 if(USE_SENSOR_CONNECTOR)
     # Указываем путь к Qt6
     set(Qt6_DIR "/home/savva/Qt/6.5.3/gcc_64/lib/cmake/Qt6" CACHE PATH "Qt6 directory")
@@ -264,7 +279,7 @@ if(USE_SENSOR_CONNECTOR)
             swresample
         )
         target_include_directories(ARLauncher PRIVATE ${SENSOR_CONNECTOR_DIR}/include)
-        target_compile_definitions(ARLauncher PRIVATE USE_SENSOR_CONNECTOR)
+        target_compile_definitions(ARLauncher PRIVATE USE_SENSOR_CONNECTOR QT_NO_DEBUG)
         message(STATUS "SensorConnector library linked")
     else()
         message(WARNING "SensorConnector library not found. Build it first with qmake")
@@ -273,6 +288,38 @@ endif()
 
 # Копируем шейдеры в директорию сборки
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR})
+
+# Vulkan shaders (GLSL -> SPIR-V)
+if(USE_VULKAN AND Vulkan_FOUND)
+    find_program(GLSLANG_VALIDATOR glslangValidator)
+    if(GLSLANG_VALIDATOR)
+        file(GLOB VK_SHADER_SOURCES
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders_vk/*.vert
+            ${CMAKE_CURRENT_SOURCE_DIR}/shaders_vk/*.frag
+        )
+
+        set(VK_SHADER_OUTPUT_DIR ${CMAKE_BINARY_DIR}/shaders_vk)
+        file(MAKE_DIRECTORY ${VK_SHADER_OUTPUT_DIR})
+
+        set(VK_SHADER_SPV_OUTPUTS "")
+        foreach(SHADER ${VK_SHADER_SOURCES})
+            get_filename_component(FILE_NAME ${SHADER} NAME)
+            set(SPV ${VK_SHADER_OUTPUT_DIR}/${FILE_NAME}.spv)
+            add_custom_command(
+                OUTPUT ${SPV}
+                COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER} -o ${SPV}
+                DEPENDS ${SHADER}
+                COMMENT "Compiling Vulkan shader ${FILE_NAME}"
+            )
+            list(APPEND VK_SHADER_SPV_OUTPUTS ${SPV})
+        endforeach()
+
+        add_custom_target(ARLauncherVulkanShaders ALL DEPENDS ${VK_SHADER_SPV_OUTPUTS})
+        add_dependencies(ARLauncher ARLauncherVulkanShaders)
+    else()
+        message(WARNING "glslangValidator not found. Vulkan shaders will not be compiled. Install Vulkan SDK / glslang-tools.")
+    endif()
+endif()
 
 # Выходные директории
 set_target_properties(ARLauncher PROPERTIES

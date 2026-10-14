@@ -15,7 +15,8 @@ enum DataType {
     RAW_IMU = 0x03,              // Сенсорные данные (IMU)
     FEATURE_POINTS = 0x04,       // Feature Points
     CAMERA_INTRINSICS = 0x05,    // Camera Intrinsics
-    LIGHT_ESTIMATION = 0x06      // Light Estimation
+    LIGHT_ESTIMATION = 0x06,     // Light Estimation
+    DEVICE_ORIENTATION = 0x0A    // Ориентация устройства (угол поворота)
 };
 
 // Структура для передачи данных

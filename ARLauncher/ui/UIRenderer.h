@@ -6,9 +6,15 @@
 #include <memory>
 #include <cstdint>
 
+#ifdef USE_FREETYPE
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#endif
+
 // Forward declarations
 class Renderer;
 class UIElement;
+class LiDARVisualizer;
 
 /**
  * @brief Рендерер UI элементов
@@ -36,6 +42,9 @@ public:
     void handleMouseClick(float x, float y);
     void handleMouseMove(float x, float y);
     void handleKeyPress(int key, int action);
+    
+    // LiDAR визуализация
+    void setLiDARVisualizer(LiDARVisualizer* lidar) { m_lidarVisualizer = lidar; }
 
 private:
     Renderer* m_renderer;
@@ -44,6 +53,20 @@ private:
     // Шейдеры и текстуры для UI
     uint32_t m_uiShaderProgram;
     uint32_t m_uiTextureAtlas;
+
+    std::vector<uint8_t> m_uiRgba;
+    uint32_t m_uiTextureId;
+    uint32_t m_uiWidth;
+    uint32_t m_uiHeight;
+    bool m_isVulkan;
+    
+    LiDARVisualizer* m_lidarVisualizer = nullptr;
+
+#ifdef USE_FREETYPE
+    FT_Library m_ftLibrary;
+    FT_Face m_ftFace;
+    bool m_ftInitialized;
+#endif
     
     void setupUIResources();
     void renderElement(UIElement* element);

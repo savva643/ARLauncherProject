@@ -1,0 +1,16 @@
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/ARLauncher.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/ARLauncherVulkanShaders.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/edit_cache.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/rebuild_cache.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/list_install_components.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/install.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/install/local.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/CMakeFiles/install/strip.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/LensEngineSDK.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/test_sensor_data.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/edit_cache.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/rebuild_cache.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/list_install_components.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/install.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/install/local.dir
+/home/savva/Documents/ARLauncherProject/ARLauncher/build_vk/LensEngineSDK/CMakeFiles/install/strip.dir

@@ -84,8 +84,8 @@ ConnectionStats SensorConnectorCore::getStatistics() const
 
 bool SensorConnectorCore::isUsbConnected() const
 {
-    // USB управляется внутри NetworkServerSimplified
-    return m_networkServer ? (m_networkServer->clientsCount() > 0) : false;
+    // 🔹 Исправлено: проверяем реальный USB статус, а не TCP clientsCount
+    return m_networkServer ? m_networkServer->isUsbConnected() : false;
 }
 
 bool SensorConnectorCore::isWiFiConnected() const

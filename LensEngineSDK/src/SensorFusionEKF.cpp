@@ -2,6 +2,9 @@
 #include <cmath>
 #include <algorithm>
 #include <chrono>
+#include <limits>
+#include <iostream>
+#include <iomanip>
 
 namespace LensEngine {
 
@@ -18,6 +21,7 @@ SensorFusionEKF::SensorFusionEKF()
     , m_gravity(9.81)
     , m_initialized(false)
     , m_lastUpdateTime(0)
+    , m_wasStationary(false)
 {
     initialize();
 }
@@ -62,6 +66,23 @@ void SensorFusionEKF::initialize()
 
     m_startTime = std::chrono::steady_clock::now();
     m_lastUpdateTime = 0;
+    m_wasStationary = false;
+    
+    // ВАЖНО: Инициализируем позицию в (0,0,0) для AR
+    // Позиция будет обновляться только через визуальную одометрию
+    m_state[0] = 0.0; // x
+    m_state[1] = 0.0; // y
+    m_state[2] = 0.0; // z
+    m_state[3] = 0.0; // vx
+    m_state[4] = 0.0; // vy
+    m_state[5] = 0.0; // vz
+    
+    // Инициализируем текущую позу
+    m_currentPose.position = glm::vec3(0.0f);
+    m_currentPose.rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    m_currentPose.timestamp = 0;
+    m_currentPose.confidence = 1.0f;
+    
     m_initialized = true;
 }
 
@@ -70,6 +91,7 @@ void SensorFusionEKF::reset()
     std::lock_guard<std::mutex> lock(m_mutex);
     initialize();
     m_poseHistory.clear();
+    m_wasStationary = false;
 }
 
 void SensorFusionEKF::updateIMU(const RawIMUData &imu)
@@ -83,18 +105,20 @@ void SensorFusionEKF::updateIMU(const RawIMUData &imu)
     double dt = (currentTime - m_lastUpdateTime) / 1000.0;
     m_lastUpdateTime = currentTime;
 
-    if (dt <= 0 || dt > 0.1) dt = 0.016; // 60 FPS
+    if (dt <= 0 || dt > 0.1) dt = 0.016;
 
-    // Простой и быстрый фильтр для AR
+    // Always use raw filter — no dependency on iPhone-specific data
     predictSimple(dt, imu);
 
-    // Обновляем позу
     m_currentPose.position = stateToPosition();
-    m_currentPose.rotation = stateToQuaternion();
+    
+    glm::quat rawRotation = stateToQuaternion();
+    glm::quat pitchInversion = glm::angleAxis(glm::pi<float>(), glm::vec3(0, 1, 0));
+    m_currentPose.rotation = glm::normalize(pitchInversion * rawRotation);
+    
     m_currentPose.timestamp = imu.timestamp;
     m_currentPose.confidence = calculatePoseConfidence();
     
-    // Вызываем колбэк
     if (m_poseCallback) {
         m_poseCallback(m_currentPose);
     }
@@ -158,75 +182,64 @@ void SensorFusionEKF::setStabilityCallback(StabilityCallback callback)
 
 void SensorFusionEKF::predictSimple(double dt, const RawIMUData &imu)
 {
-    // Интегрируем гироскоп для ориентации
     glm::quat currentOrientation = stateToQuaternion();
     glm::vec3 gyro(imu.gyroX, imu.gyroY, imu.gyroZ);
     
-    // Преобразуем угловую скорость в кватернион
-    glm::quat gyroDelta = glm::quat(1.0f, gyro.x * dt * 0.5f, gyro.y * dt * 0.5f, gyro.z * dt * 0.5f);
-    glm::quat integratedOrientation = glm::normalize(currentOrientation * gyroDelta);
-    quaternionToState(integratedOrientation);
-
-    // Коррекция по гравитации
-    glm::vec3 measuredGravity(imu.gravityX, imu.gravityY, imu.gravityZ);
-    if (glm::length(measuredGravity) > 0.1f) {
-        glm::quat orientationAfterGyro = stateToQuaternion();
-        glm::vec3 predictedGravity = orientationAfterGyro * glm::vec3(0, -1, 0);
-        glm::vec3 correction = (measuredGravity - predictedGravity) * 0.1f;
-
-        glm::quat correctionQ = glm::quat(1.0f, correction.y * 0.5f, correction.x * 0.5f, correction.z * 0.5f);
-        glm::quat newOrientation = glm::normalize(correctionQ * orientationAfterGyro);
-        quaternionToState(newOrientation);
-    }
-
-    // Интегрируем акселерометр для позиции
-    // ВАЖНО: Позиция из акселерометра накапливает ошибки, поэтому используем только для краткосрочного трекинга
-    // Для долгосрочного трекинга нужна визуальная одометрия
-    glm::vec3 acceleration(imu.accelX, imu.accelY, imu.accelZ);
-    glm::vec3 velocity = stateToVelocity();
-    glm::vec3 position = stateToPosition();
+    float gyroMagnitude = glm::length(gyro);
     
-    // Удаляем гравитацию из акселерометра
-    glm::quat orientation = stateToQuaternion();
-    glm::vec3 gravityWorld = orientation * glm::vec3(0, -m_gravity, 0);
-    glm::vec3 linearAccel = acceleration - gravityWorld;
-    
-    // Обновляем скорость и позицию
-    velocity += linearAccel * static_cast<float>(dt);
-    
-    // Ограничиваем скорость для предотвращения накопления ошибок
-    float maxVelocity = 10.0f; // м/с
-    if (glm::length(velocity) > maxVelocity) {
-        velocity = glm::normalize(velocity) * maxVelocity;
+    // 1. Integrate gyroscope only when moving
+    // When stationary: gyro noise accumulates as rotation drift — skip integration
+    if (dt > 0 && dt < 0.1 && gyroMagnitude > 0.02f) {
+        float halfDt = static_cast<float>(dt * 0.5);
+        glm::quat gyroDelta = glm::quat(1.0f, 
+            static_cast<float>(gyro.x) * halfDt, 
+            static_cast<float>(gyro.y) * halfDt, 
+            static_cast<float>(gyro.z) * halfDt);
+        glm::quat integrated = glm::normalize(currentOrientation * gyroDelta);
+        quaternionToState(integrated);
     }
     
-    position += velocity * static_cast<float>(dt);
-    
-    // Ограничиваем позицию для предотвращения огромных значений
-    // Если позиция слишком большая, сбрасываем её (возможно, устройство не двигалось)
-    float maxPosition = 100.0f; // метры
-    if (glm::length(position) > maxPosition) {
-        // Сбрасываем позицию, если она слишком большая (вероятно, накопление ошибок)
-        position = glm::vec3(0.0f);
-        velocity = glm::vec3(0.0f);
+    // 2. Gravity correction: slow, pitch/roll only, only when moving
+    // This corrects long-term drift without causing jitter when stationary
+    if (gyroMagnitude > 0.05f) {
+        glm::vec3 measuredGravity(imu.gravityX, imu.gravityY, imu.gravityZ);
+        float gravityLen = glm::length(measuredGravity);
+        
+        if (gravityLen > 0.5f && gravityLen < 1.5f) {
+            glm::vec3 normGrav = measuredGravity / gravityLen;
+            glm::quat orient = stateToQuaternion();
+            glm::vec3 expected = orient * glm::vec3(0, -1, 0);
+            float err = glm::length(normGrav - expected);
+            
+            if (err > 0.05f) {
+                glm::vec3 axis = glm::cross(expected, normGrav);
+                float angle = glm::asin(glm::clamp(glm::length(axis), 0.0f, 1.0f));
+                
+                if (glm::length(axis) > 0.001f && angle > 0.001f) {
+                    axis = glm::normalize(axis);
+                    axis.y = 0.0f; // Only pitch/roll, never yaw
+                    if (glm::length(axis) > 0.0001f) {
+                        axis = glm::normalize(axis);
+                        angle *= 0.01f; // 1% per frame when moving
+                        glm::quat correction = glm::angleAxis(angle, axis);
+                        quaternionToState(glm::normalize(correction * orient));
+                    }
+                }
+            }
+        }
     }
     
-    // Сохраняем в состояние
-    m_state[0] = position.x;
-    m_state[1] = position.y;
-    m_state[2] = position.z;
-    m_state[3] = velocity.x;
-    m_state[4] = velocity.y;
-    m_state[5] = velocity.z;
+    // Position: not from IMU (DLO provides it)
 }
 
 void SensorFusionEKF::predictStep(double dt)
 {
     // Базовая реализация predict step
-    // Обновляем позицию и скорость на основе текущего состояния
+    // Экстраполируем позицию из скорости для краткосрочного трекинга
+    // Визуальная одометрия будет корректировать долгосрочный дрифт
     if (dt <= 0) return;
     
-    // Простая экстраполяция позиции: x = x + v * dt
+    // Экстраполяция позиции: x = x + v * dt
     m_state[0] += m_state[3] * dt; // x
     m_state[1] += m_state[4] * dt; // y
     m_state[2] += m_state[5] * dt; // z
@@ -240,6 +253,7 @@ void SensorFusionEKF::predictStep(double dt)
 void SensorFusionEKF::updateIMUStep(const RawIMUData &imu, double dt)
 {
     // Базовая реализация IMU update
+    // Обновляем ориентацию и позицию из IMU для краткосрочного трекинга
     if (dt <= 0) return;
     
     // Обновляем ориентацию на основе гироскопа
@@ -253,53 +267,90 @@ void SensorFusionEKF::updateIMUStep(const RawIMUData &imu, double dt)
     
     quaternionToState(newRot);
     
-    // Обновляем скорость на основе акселерометра
-    glm::vec3 accel(imu.accelX, imu.accelY, imu.accelZ);
-    m_state[3] += accel.x * dt; // vx
-    m_state[4] += accel.y * dt; // vy
-    m_state[5] += accel.z * dt; // vz
+    // Обновляем скорость и позицию из userAcceleration (уже без гравитации!)
+    glm::vec3 userAccel(imu.accelX, imu.accelY, imu.accelZ);
+    m_state[3] += userAccel.x * dt; // vx
+    m_state[4] += userAccel.y * dt; // vy
+    m_state[5] += userAccel.z * dt; // vz
+    
+    // Интегрируем скорость для позиции
+    m_state[0] += m_state[3] * dt; // x
+    m_state[1] += m_state[4] * dt; // y
+    m_state[2] += m_state[5] * dt; // z
 }
 
 void SensorFusionEKF::updateVisualStep(const glm::vec3 &visualPosition, const glm::quat &visualRotation)
 {
-    // Базовая реализация visual update
-    // Простое слияние с визуальной одометрией
-    double alpha = 0.1; // Коэффициент смешивания
-    
-    glm::vec3 currentPos = stateToPosition();
-    glm::quat currentRot = stateToQuaternion();
-    
-    // Смешиваем позицию
-    glm::vec3 newPos = currentPos * static_cast<float>(1.0 - alpha) + visualPosition * static_cast<float>(alpha);
-    m_state[0] = static_cast<double>(newPos.x);
-    m_state[1] = static_cast<double>(newPos.y);
-    m_state[2] = static_cast<double>(newPos.z);
-    
-    // Смешиваем ориентацию
-    glm::quat newRot = glm::slerp(currentRot, visualRotation, static_cast<float>(alpha));
-    quaternionToState(newRot);
+    // PURE SENSOR VIO: store VO position for delta computation in predictSimple
+
+    if (std::isnan(visualPosition.x) || std::isnan(visualPosition.y) || std::isnan(visualPosition.z) ||
+        std::isinf(visualPosition.x) || std::isinf(visualPosition.y) || std::isinf(visualPosition.z)) {
+        return;
+    }
+    if (glm::length(visualPosition) > 100.0f) return;
+
+    uint64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+
+    if (m_lastVOTime > 0) {
+        m_voDt = (now - m_lastVOTime) / 1000.0;
+    }
+    m_lastVOTime = now;
+
+    if (glm::length(m_lastVOPosition) < 0.0001f) {
+        m_lastVOPosition = stateToPosition();
+    }
+
+    m_voPosition = visualPosition;
+    m_hasVOUpdate = true;
+
+    // Rotation: trust IMU only (visualRotation has scale ambiguity)
 }
 
 void SensorFusionEKF::updateLidarStep(const std::vector<glm::vec3> &lidarPoints)
 {
-    // Базовая реализация LiDAR update
+    // APPLE VISION PRO / ARKit СТИЛЬ: LiDAR для коррекции глубины и позиции
     if (lidarPoints.empty()) return;
-    
-    // Находим ближайшую точку к полу (y=0)
-    glm::vec3 floorPoint(0.0f);
-    float minY = std::numeric_limits<float>::max();
-    
-    for (const auto& point : lidarPoints) {
-        if (point.y < minY && point.y > -0.5f) { // Ищем точки близко к полу
-            minY = point.y;
-            floorPoint = point;
+
+    glm::vec3 currentPos = stateToPosition();
+
+    // --- 1. Медианная коррекция Z (глубина) ---
+    // Собираем все Z точек в пределах 0.5–5.0 метров
+    std::vector<float> validZ;
+    validZ.reserve(lidarPoints.size());
+    for (const auto& p : lidarPoints) {
+        if (p.z > 0.5f && p.z < 5.0f) {
+            validZ.push_back(p.z);
         }
     }
-    
-    // Обновляем позицию по Z (глубина) на основе LiDAR
+    if (!validZ.empty()) {
+        std::nth_element(validZ.begin(), validZ.begin() + validZ.size()/2, validZ.end());
+        float medianZ = validZ[validZ.size() / 2];
+
+        // Корректируем Z камеры: LiDAR говорит "впереди объект на расстоянии medianZ"
+        // Но нам нужно понять, как это влияет на позицию камеры.
+        // Если medianZ сильно отличается от текущего Z, корректируем с alpha=0.15
+        double alpha = 0.15;
+        m_state[2] = m_state[2] * (1.0 - alpha) + medianZ * alpha;
+    }
+
+    // --- 2. Коррекция высоты (Y) по полу ---
+    // Ищем точки с минимальным Y (в camera space это примерно пол под камерой)
+    float minY = std::numeric_limits<float>::max();
+    for (const auto& p : lidarPoints) {
+        if (p.y < minY && p.z > 0.3f && p.z < 3.0f) {
+            minY = p.y;
+        }
+    }
     if (minY < std::numeric_limits<float>::max()) {
-        double alpha = 0.05;
-        m_state[2] = m_state[2] * (1.0 - alpha) + floorPoint.z * alpha;
+        // В camera space Y смотрит вниз. minY ≈ высота камеры над полом.
+        // Корректируем Y позиции: предполагаем, что пол на y=0 в world space
+        double alpha = 0.10;
+        // Если minY = 1.5, значит камера на высоте ~1.5м
+        // Текущая world-Y должна быть примерно minY (в зависимости от ориентации)
+        // Упрощенно: считаем, что Y камеры = |minY| (для горизонтального держания)
+        float targetY = std::abs(minY);
+        m_state[1] = m_state[1] * (1.0 - alpha) + targetY * alpha;
     }
 }
 

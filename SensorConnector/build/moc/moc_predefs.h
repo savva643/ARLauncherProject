@@ -70,6 +70,7 @@
 #define __linux 1
 #define __DEC32_EPSILON__ 1E-6DF
 #define __FLT_EVAL_METHOD_TS_18661_3__ 0
+#define __OPTIMIZE__ 1
 #define __UINT32_MAX__ 0xffffffffU
 #define __GXX_EXPERIMENTAL_CXX0X__ 1
 #define __DBL_DENORM_MIN__ double(4.94065645841246544176568792868221372e-324L)
@@ -85,6 +86,7 @@
 #define __SSP_STRONG__ 3
 #define __GCC_ATOMIC_POINTER_LOCK_FREE 2
 #define __ATOMIC_SEQ_CST 5
+#define _FORTIFY_SOURCE 3
 #define __unix 1
 #define __INT_LEAST64_MAX__ 0x7fffffffffffffffL
 #define __FLT32X_MANT_DIG__ 53
@@ -207,7 +209,6 @@
 #define __FLT32_MIN__ 1.17549435082228750796873653722224568e-38F32
 #define __UINT8_TYPE__ unsigned char
 #define __FLT_DIG__ 6
-#define __NO_INLINE__ 1
 #define __DEC_EVAL_METHOD__ 2
 #define __FLT_MANT_DIG__ 24
 #define __LDBL_DECIMAL_DIG__ 21

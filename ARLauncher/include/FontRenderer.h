@@ -3,6 +3,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <cstdint>
 #include <glm/glm.hpp>
 
 #ifdef USE_FREETYPE
@@ -46,6 +47,21 @@ public:
      */
     void renderText(const std::string& text, float x, float y, 
                     const glm::vec4& color = glm::vec4(1.0f), float scale = 1.0f);
+
+    /**
+     * @brief Рендеринг текста в CPU bitmap (RGBA)
+     * @param text текст для отображения
+     * @param x позиция X
+     * @param y позиция Y
+     * @param color цвет текста (RGBA)
+     * @param scale масштаб
+     * @param bitmap указатель на RGBA bitmap
+     * @param width ширина bitmap
+     * @param height высота bitmap
+     */
+    void renderTextToBitmap(const std::string& text, float x, float y,
+                            const glm::vec4& color, float scale,
+                            uint8_t* bitmap, int width, int height);
     
     /**
      * @brief Получить размер текста
@@ -55,18 +71,26 @@ public:
     glm::vec2 getTextSize(const std::string& text);
     
     /**
+     * @brief Проверить загружен ли шрифт
+     * @return true если шрифт загружен
+     */
+    bool isFontLoaded() const;
+    
+    /**
      * @brief Очистка ресурсов
      */
     void cleanup();
 
 private:
-#ifdef USE_FREETYPE
+#if defined(USE_FREETYPE)
     FT_Library m_ftLibrary;
     FT_Face m_ftFace;
     bool m_fontLoaded;
     unsigned int m_fontSize;
-    
-    // Кэш глифов (текстуры для каждого символа)
+
+    // Кэш глифов (текстуры для каждого символа) — используется только в OpenGL пути
+    // (Vulkan UI рендерит текст через UIRenderer CPU->texture и не зависит от FontRenderer).
+    #if defined(USE_OPENGL)
     struct Glyph {
         GLuint textureId;
         unsigned int width;
@@ -76,16 +100,10 @@ private:
         long advance;
     };
     std::unordered_map<char32_t, Glyph> m_glyphCache;
-    
-    /**
-     * @brief Загрузка глифа в текстуру
-     * @param codepoint код символа (UTF-32)
-     */
+
     void loadGlyph(char32_t codepoint);
-    
-    /**
-     * @brief Конвертация UTF-8 в UTF-32
-     */
+    #endif
+
     std::u32string utf8ToUtf32(const std::string& utf8);
 #endif
 };
