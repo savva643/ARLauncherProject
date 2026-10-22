@@ -8,6 +8,8 @@ AR лаунчер для операционной системы AR - проек
 - **SensorStream** — приём iPhone без Qt, H.264/HEVC → NV12 → GPU. Старый Qt SensorConnector — LEGACY.
 - **LensEngine::TrackingSession** — трекинг головы по сырому IMU с предсказанием; 6DoF через OpenVINS.
 - **Late latching + репроекция видео** — мир стоит на месте при поворотах головы.
+- **LiDAR** — позиция 6DoF без дрейфа, окклюзия (стены закрывают объекты), пол и тени; свет и отражения по комнате; метки ArUco; пространственный звук.
+- **GlaskiOS Control** — окно сборки и запуска со всеми переключателями: `python3 tools/glaski_control.py`.
 
 Как собрать, запустить и проверить без iPhone: [docs/GLASKI_STREAMING.md](docs/GLASKI_STREAMING.md).
 Протокол: [docs/PROTOCOL_V2.md](docs/PROTOCOL_V2.md).
