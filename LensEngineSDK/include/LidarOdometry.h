@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <iosfwd>
 #include <vector>
 
 namespace LensEngine {
@@ -71,6 +72,24 @@ public:
                    const glm::dvec3* imuDelta = nullptr);
 
     bool initialized() const { return !m_keyframes.empty(); }
+    size_t keyframeCount() const { return m_keyframes.size(); }
+    bool hasPose() const { return m_havePose; }
+    Pose pose() const { return m_pose; }
+
+    // ---- Карта мира: сохранение и «где я?» после перезапуска
+    void save(std::ostream& out) const;
+    bool load(std::istream& in);            // только ключевые кадры; текущей позы нет
+
+    /// Найти позу камеры в мире этой карты без приближения — известна только гравитация
+    /// (imuWorldFromCam — ориентация в любом мире с Z вверх). Перебирает ключевые кадры и рысканье,
+    /// за вызов — не больше budget совмещений (cursor продолжает перебор между вызовами).
+    bool relocalize(const float* depth, int width, int height, float fx, float fy, float cx, float cy,
+                    const glm::dquat& imuWorldFromCam, Pose& worldFromCam, double& quality, int budget, int& cursor) const;
+
+    /// Перевести всю карту и текущую позу в другой мир: p' = T * p
+    void transform(const Pose& T);
+    /// Добавить ключевые кадры другой карты (уже в том же мире)
+    void appendKeyframes(const LidarOdometry& other);
 
 private:
     struct Frame {
@@ -93,8 +112,18 @@ private:
         bool degenerate = false;
     };
 
+    struct AlignParams {
+        float startDist;            // окно ассоциации в первой итерации, м
+        int iterations;
+        double rotPriorScale;       // доля обычного IMU-приора на поворот
+        double transPriorScale;
+        double maxAngleChangeDeg;   // насколько ICP может повернуть начальное приближение
+        double minInlierRatio;
+    };
     void buildFrame(const float* depth, int width, int height, float fx, float fy, float cx, float cy, Frame& out) const;
-    IcpResult align(const Frame& src, const Keyframe& key, const Pose& keyFromCamInit) const;
+    static void computeNormals(Frame& f);
+    IcpResult align(const Frame& src, const Keyframe& key, const Pose& keyFromCamInit,
+                    const AlignParams* params = nullptr) const;
     void updateFloor(const Frame& f, const Pose& pose);
     int findKeyframeNear(const Pose& pose, int exclude) const;
 

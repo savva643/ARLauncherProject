@@ -1602,6 +1602,7 @@ void VulkanRenderer::shutdown()
     }
 
     destroyUIResources();
+    collectRetiredMeshes(true);
     destroySceneResources();
     destroyPassthrough();
 
@@ -1652,6 +1653,14 @@ void VulkanRenderer::shutdown()
     m_meshes.clear();
     
     cleanupSwapchain();
+    if (m_renderPass != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_device, m_renderPass, nullptr);
+        m_renderPass = VK_NULL_HANDLE;
+    }
+    if (m_renderPassWithLoad != VK_NULL_HANDLE) {
+        vkDestroyRenderPass(m_device, m_renderPassWithLoad, nullptr);
+        m_renderPassWithLoad = VK_NULL_HANDLE;
+    }
     
     if (m_commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
@@ -1702,6 +1711,7 @@ void VulkanRenderer::beginFrame()
 
     // Ждём, пока GPU освободит этот слот (не дольше kFramesInFlight кадров вперёд)
     vkWaitForFences(m_device, 1, &m_frameFences[m_frameSlot], VK_TRUE, UINT64_MAX);
+    collectRetiredMeshes(false);
 
     uint32_t imageIndex = 0;
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX,
@@ -1908,7 +1918,9 @@ void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
             if (meshId == 0 || meshId > m_meshes.size()) continue;
             const float height = transforms[i][3].y - sp.floorY;
             if (height < 0.0f) continue;   // под полом
+            if (i < m_materials.size() && !m_materials[i].castShadow) continue;
             const VulkanMesh& mesh = m_meshes[meshId - 1];
+            if (mesh.vertexBuffer == VK_NULL_HANDLE) continue;
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, offsets);
             vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -1930,6 +1942,7 @@ void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
         const uint32_t meshId = meshIds[i];
         if (meshId == 0 || meshId > m_meshes.size()) continue;
         const VulkanMesh& mesh = m_meshes[meshId - 1];
+        if (mesh.vertexBuffer == VK_NULL_HANDLE) continue;
         VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, offsets);
         vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
@@ -1938,7 +1951,7 @@ void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
         Push pc;
         pc.modelView = m_viewMatrix * transforms[i];
         pc.color = glm::vec4(glm::vec3(m.color), m.color.a * sp.opacity * m_3dObjectsOpacity);
-        pc.material = glm::vec4(m.metallic, m.roughness, 0.0f, 0.0f);
+        pc.material = glm::vec4(m.metallic, m.roughness, 0.0f, m.occlusionBias);
         vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                            sizeof(Push), &pc);
         vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
@@ -2284,71 +2297,92 @@ void VulkanRenderer::renderUIWindows()
     }
 }
 
-uint32_t VulkanRenderer::createMesh(const std::vector<float>& vertices, 
+bool VulkanRenderer::fillMesh(VulkanMesh& mesh, const std::vector<float>& vertices, const std::vector<uint32_t>& indices)
+{
+    mesh = VulkanMesh{};
+    const VkDeviceSize vertexBufferSize = vertices.size() * sizeof(float);
+    if (!createBuffer(vertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      mesh.vertexBuffer, mesh.vertexBufferMemory)) {
+        std::cerr << "Failed to create vertex buffer" << std::endl;
+        return false;
+    }
+    void* data;
+    vkMapMemory(m_device, mesh.vertexBufferMemory, 0, vertexBufferSize, 0, &data);
+    memcpy(data, vertices.data(), static_cast<size_t>(vertexBufferSize));
+    vkUnmapMemory(m_device, mesh.vertexBufferMemory);
+
+    const VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
+    if (!createBuffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      mesh.indexBuffer, mesh.indexBufferMemory)) {
+        std::cerr << "Failed to create index buffer" << std::endl;
+        releaseMeshBuffers(mesh);
+        return false;
+    }
+    vkMapMemory(m_device, mesh.indexBufferMemory, 0, indexBufferSize, 0, &data);
+    memcpy(data, indices.data(), static_cast<size_t>(indexBufferSize));
+    vkUnmapMemory(m_device, mesh.indexBufferMemory);
+    mesh.indexCount = static_cast<uint32_t>(indices.size());
+    return true;
+}
+
+void VulkanRenderer::releaseMeshBuffers(VulkanMesh& mesh)
+{
+    if (mesh.vertexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(m_device, mesh.vertexBuffer, nullptr);
+        vkFreeMemory(m_device, mesh.vertexBufferMemory, nullptr);
+    }
+    if (mesh.indexBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(m_device, mesh.indexBuffer, nullptr);
+        vkFreeMemory(m_device, mesh.indexBufferMemory, nullptr);
+    }
+    mesh = VulkanMesh{};
+}
+
+void VulkanRenderer::collectRetiredMeshes(bool all)
+{
+    // Кадры в полёте могли ещё читать старые буферы — удаляем через kFramesInFlight + 1 кадров
+    auto it = m_retiredMeshes.begin();
+    while (it != m_retiredMeshes.end()) {
+        if (all || m_frameNumber > it->frame + kFramesInFlight + 1) {
+            releaseMeshBuffers(it->mesh);
+            it = m_retiredMeshes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+uint32_t VulkanRenderer::createMesh(const std::vector<float>& vertices,
                                      const std::vector<uint32_t>& indices)
 {
     if (!m_initialized || vertices.empty() || indices.empty()) {
         return 0;
     }
-    
     VulkanMesh mesh{};
-    
-    // Создаем vertex buffer
-    VkDeviceSize vertexBufferSize = vertices.size() * sizeof(float);
-    if (!createBuffer(vertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      mesh.vertexBuffer, mesh.vertexBufferMemory)) {
-        std::cerr << "Failed to create vertex buffer" << std::endl;
-        return 0;
-    }
-    
-    // Заполняем vertex buffer
-    void* data;
-    vkMapMemory(m_device, mesh.vertexBufferMemory, 0, vertexBufferSize, 0, &data);
-    memcpy(data, vertices.data(), static_cast<size_t>(vertexBufferSize));
-    vkUnmapMemory(m_device, mesh.vertexBufferMemory);
-    
-    // Создаем index buffer
-    VkDeviceSize indexBufferSize = indices.size() * sizeof(uint32_t);
-    if (!createBuffer(indexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      mesh.indexBuffer, mesh.indexBufferMemory)) {
-        std::cerr << "Failed to create index buffer" << std::endl;
-        vkDestroyBuffer(m_device, mesh.vertexBuffer, nullptr);
-        vkFreeMemory(m_device, mesh.vertexBufferMemory, nullptr);
-        return 0;
-    }
-    
-    // Заполняем index buffer
-    vkMapMemory(m_device, mesh.indexBufferMemory, 0, indexBufferSize, 0, &data);
-    memcpy(data, indices.data(), static_cast<size_t>(indexBufferSize));
-    vkUnmapMemory(m_device, mesh.indexBufferMemory);
-    
-    mesh.indexCount = static_cast<uint32_t>(indices.size());
+    if (!fillMesh(mesh, vertices, indices)) return 0;
     m_meshes.push_back(mesh);
-    
     return m_nextMeshId++;
+}
+
+bool VulkanRenderer::updateMesh(uint32_t meshId, const std::vector<float>& vertices, const std::vector<uint32_t>& indices)
+{
+    if (meshId == 0 || meshId > m_meshes.size()) return false;
+    VulkanMesh fresh{};
+    if (!vertices.empty() && !indices.empty() && !fillMesh(fresh, vertices, indices)) return false;
+    VulkanMesh& slot = m_meshes[meshId - 1];
+    if (slot.vertexBuffer != VK_NULL_HANDLE) m_retiredMeshes.push_back({slot, m_frameNumber});
+    slot = fresh;
+    return true;
 }
 
 void VulkanRenderer::destroyMesh(uint32_t meshId)
 {
     if (meshId == 0 || meshId > m_meshes.size()) return;
-    
     VulkanMesh& mesh = m_meshes[meshId - 1];
-    
-    if (mesh.vertexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(m_device, mesh.vertexBuffer, nullptr);
-        vkFreeMemory(m_device, mesh.vertexBufferMemory, nullptr);
-        mesh.vertexBuffer = VK_NULL_HANDLE;
-    }
-    
-    if (mesh.indexBuffer != VK_NULL_HANDLE) {
-        vkDestroyBuffer(m_device, mesh.indexBuffer, nullptr);
-        vkFreeMemory(m_device, mesh.indexBufferMemory, nullptr);
-        mesh.indexBuffer = VK_NULL_HANDLE;
-    }
-    
-    mesh.indexCount = 0;
+    if (mesh.vertexBuffer != VK_NULL_HANDLE) m_retiredMeshes.push_back({mesh, m_frameNumber});
+    mesh = VulkanMesh{};
 }
 
 uint32_t VulkanRenderer::createTexture(const uint8_t* data, uint32_t width, uint32_t height)

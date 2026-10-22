@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <istream>
+#include <ostream>
 
 namespace LensEngine {
 
@@ -131,6 +133,13 @@ void LidarOdometry::buildFrame(const float* depth, int width, int height, float 
             out.v[size_t(v) * out.w + u] = glm::vec3((su - cx) / fx * d, (sv - cy) / fy * d, d);
         }
     }
+    computeNormals(out);
+}
+
+void LidarOdometry::computeNormals(Frame& out)
+{
+    out.n.assign(out.v.size(), glm::vec3(0.0f));
+    out.valid = 0;
     for (int v = 1; v < out.h - 1; ++v) {
         for (int u = 1; u < out.w - 1; ++u) {
             const size_t i = size_t(v) * out.w + u;
@@ -155,19 +164,22 @@ void LidarOdometry::buildFrame(const float* depth, int width, int height, float 
     }
 }
 
-LidarOdometry::IcpResult LidarOdometry::align(const Frame& src, const Keyframe& key, const Pose& keyFromCamInit) const
+LidarOdometry::IcpResult LidarOdometry::align(const Frame& src, const Keyframe& key, const Pose& keyFromCamInit,
+                                              const AlignParams* params) const
 {
+    const AlignParams defaults{m_cfg.maxPointDist, m_cfg.iterations, 1.0, 1.0, 10.0, m_cfg.minInlierRatio};
+    const AlignParams& P = params ? *params : defaults;
     IcpResult res;
     Pose T = keyFromCamInit;
     glm::dvec3 omegaAcc(0.0);
     const Frame& kf = key.frame;
-    const int iters = std::max(2, m_cfg.iterations);
+    const int iters = std::max(2, P.iterations);
     int inliers = 0;
     double sse = 0.0;
     bool degenerate = false;
 
     for (int it = 0; it < iters; ++it) {
-        const double maxD = m_cfg.maxPointDist + (0.05 - m_cfg.maxPointDist) * double(it) / double(iters - 1);
+        const double maxD = P.startDist + (0.05 - P.startDist) * double(it) / double(iters - 1);
         const double maxD2 = maxD * maxD;
         const glm::dmat3 R = glm::mat3_cast(T.q);
         double H[6][6] = {};
@@ -214,8 +226,8 @@ LidarOdometry::IcpResult LidarOdometry::align(const Frame& src, const Keyframe& 
 
         // Приоры: поворот — к IMU, смещение — к предсказанию (IMU/скорость). В хорошо видимых направлениях
         // решает геометрия (её вес в 10-30 раз больше), в слабых — предсказание, и шум ICP туда не копится.
-        const double lr = m_cfg.rotPrior * inliers;
-        const double lt = m_cfg.transPrior * inliers;
+        const double lr = m_cfg.rotPrior * P.rotPriorScale * inliers;
+        const double lt = m_cfg.transPrior * P.transPriorScale * inliers;
         const glm::dvec3 dt = T.t - keyFromCamInit.t;
         for (int a = 0; a < 3; ++a) {
             H[a][a] += lr;
@@ -240,8 +252,8 @@ LidarOdometry::IcpResult LidarOdometry::align(const Frame& src, const Keyframe& 
     res.rmse = std::sqrt(sse / std::max(1, inliers));
     res.inlierRatio = src.valid > 0 ? double(inliers) / src.valid : 0.0;
     res.degenerate = degenerate;
-    res.ok = res.inlierRatio >= m_cfg.minInlierRatio && res.rmse <= m_cfg.maxRmse &&
-             angleOf(glm::conjugate(keyFromCamInit.q) * T.q) < glm::radians(10.0);
+    res.ok = res.inlierRatio >= P.minInlierRatio && res.rmse <= m_cfg.maxRmse &&
+             angleOf(glm::conjugate(keyFromCamInit.q) * T.q) < glm::radians(P.maxAngleChangeDeg);
     return res;
 }
 
@@ -428,6 +440,143 @@ LidarOdometry::Result LidarOdometry::process(int64_t tNs, const float* depth, in
     out.hasFloor = m_floorValid;
     out.floorZ = m_floorZ;
     return out;
+}
+
+// ---------------- Карта мира ----------------
+
+namespace {
+template <typename T>
+void put(std::ostream& o, const T& v) { o.write(reinterpret_cast<const char*>(&v), sizeof(T)); }
+template <typename T>
+bool get(std::istream& i, T& v) { i.read(reinterpret_cast<char*>(&v), sizeof(T)); return bool(i); }
+} // namespace
+
+void LidarOdometry::save(std::ostream& out) const
+{
+    put(out, uint32_t(0x4F44494C));   // LIDO
+    put(out, uint32_t(m_keyframes.size()));
+    for (const auto& kf : m_keyframes) {
+        put(out, int32_t(kf.id));
+        put(out, kf.pose.q.w); put(out, kf.pose.q.x); put(out, kf.pose.q.y); put(out, kf.pose.q.z);
+        put(out, kf.pose.t.x); put(out, kf.pose.t.y); put(out, kf.pose.t.z);
+        const Frame& f = kf.frame;
+        put(out, int32_t(f.w)); put(out, int32_t(f.h));
+        put(out, f.fx); put(out, f.fy); put(out, f.cx); put(out, f.cy);
+        // глубина в мм (точки восстанавливаются по интринсикам)
+        std::vector<uint16_t> mm(f.v.size());
+        for (size_t i = 0; i < f.v.size(); ++i) mm[i] = uint16_t(std::clamp(f.v[i].z * 1000.0f + 0.5f, 0.0f, 65535.0f));
+        out.write(reinterpret_cast<const char*>(mm.data()), std::streamsize(mm.size() * 2));
+    }
+    put(out, uint8_t(m_floorValid));
+    put(out, m_floorZ);
+}
+
+bool LidarOdometry::load(std::istream& in)
+{
+    uint32_t magic = 0, count = 0;
+    if (!get(in, magic) || magic != 0x4F44494C || !get(in, count) || count > 100000) return false;
+    std::deque<Keyframe> kfs;
+    int maxId = 0;
+    for (uint32_t k = 0; k < count; ++k) {
+        Keyframe kf;
+        int32_t id = 0, w = 0, h = 0;
+        if (!get(in, id)) return false;
+        get(in, kf.pose.q.w); get(in, kf.pose.q.x); get(in, kf.pose.q.y); get(in, kf.pose.q.z);
+        get(in, kf.pose.t.x); get(in, kf.pose.t.y); get(in, kf.pose.t.z);
+        get(in, w); get(in, h);
+        Frame& f = kf.frame;
+        get(in, f.fx); get(in, f.fy); get(in, f.cx); get(in, f.cy);
+        if (!in || w <= 0 || h <= 0 || w * h > 1 << 22) return false;
+        f.w = w;
+        f.h = h;
+        std::vector<uint16_t> mm(size_t(w) * h);
+        in.read(reinterpret_cast<char*>(mm.data()), std::streamsize(mm.size() * 2));
+        if (!in) return false;
+        f.v.assign(mm.size(), glm::vec3(0.0f));
+        for (int v = 0; v < h; ++v)
+            for (int u = 0; u < w; ++u) {
+                const float d = mm[size_t(v) * w + u] * 0.001f;
+                if (d <= 0.0f) continue;
+                f.v[size_t(v) * w + u] = glm::vec3((u - f.cx) / f.fx * d, (v - f.cy) / f.fy * d, d);
+            }
+        computeNormals(f);
+        kf.id = id;
+        maxId = std::max(maxId, int(id));
+        kfs.push_back(std::move(kf));
+    }
+    uint8_t floorValid = 0;
+    double floorZ = 0.0;
+    get(in, floorValid);
+    get(in, floorZ);
+    reset();
+    m_keyframes = std::move(kfs);
+    m_nextId = maxId + 1;
+    m_current = m_keyframes.empty() ? -1 : 0;
+    m_havePose = false;
+    m_floorValid = floorValid != 0;
+    m_floorZ = floorZ;
+    return true;
+}
+
+bool LidarOdometry::relocalize(const float* depth, int width, int height, float fx, float fy, float cx, float cy,
+                               const glm::dquat& imuWorldFromCam, Pose& worldFromCam, double& quality, int budget,
+                               int& cursor) const
+{
+    if (m_keyframes.empty() || !depth) return false;
+    Frame cur;
+    buildFrame(depth, width, height, fx, fy, cx, cy, cur);
+    if (cur.valid < 500) return false;
+
+    constexpr int kYaws = 18;   // через 20°
+    // Широкое окно ассоциации, слабый приор поворота (рысканье неизвестно), строже по качеству
+    const AlignParams P{0.6f, 30, 0.05, 0.1, 25.0, 0.55};
+    const int total = int(m_keyframes.size()) * kYaws;
+    double best = 0.0;
+    for (int n = 0; n < budget && n < total; ++n) {
+        const int c = cursor++ % total;
+        const Keyframe& kf = m_keyframes[size_t(c / kYaws)];
+        const double yaw = (c % kYaws) * (2.0 * 3.14159265358979323846 / kYaws);
+        Pose init;
+        init.q = glm::normalize(glm::angleAxis(yaw, glm::dvec3(0, 0, 1)) * imuWorldFromCam);
+        init.t = kf.pose.t;
+        const IcpResult r = align(cur, kf, compose(inverse(kf.pose), init), &P);
+        if (!r.ok || r.rmse > 0.02) continue;
+        const double q = r.inlierRatio - 5.0 * r.rmse;
+        if (q > best) {
+            best = q;
+            worldFromCam = compose(kf.pose, r.keyFromCam);
+        }
+    }
+    quality = best;
+    return best > 0.0;
+}
+
+void LidarOdometry::transform(const Pose& T)
+{
+    for (auto& kf : m_keyframes) kf.pose = compose(T, kf.pose);
+    m_pose = compose(T, m_pose);
+    m_velocity = T.q * m_velocity;
+    // пол остаётся горизонтальным: T — поворот вокруг вертикали + сдвиг
+    m_floorZ += T.t.z;
+}
+
+void LidarOdometry::appendKeyframes(const LidarOdometry& other)
+{
+    for (const auto& kf : other.m_keyframes) {
+        Keyframe copy = kf;
+        copy.id = m_nextId++;
+        m_keyframes.push_front(std::move(copy));   // старые — в начало (вытесняются первыми при переполнении)
+        if (m_current >= 0) ++m_current;
+    }
+    while (m_keyframes.size() > m_cfg.maxKeyframes) {
+        m_keyframes.pop_front();
+        if (m_current > 0) --m_current;
+    }
+    if (m_current < 0 && !m_keyframes.empty()) m_current = int(m_keyframes.size()) - 1;
+    if (!m_floorValid && other.m_floorValid) {
+        m_floorValid = true;
+        m_floorZ = other.m_floorZ;
+    }
 }
 
 } // namespace LensEngine

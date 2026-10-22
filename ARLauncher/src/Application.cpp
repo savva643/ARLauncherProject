@@ -12,6 +12,7 @@
 #include "EnvironmentProbe.h"
 #include "MarkerTracker.h"
 #include "AudioEngine.h"
+#include "HandTrackingProvider.h"
 #include "ARLauncherAPI.h"
 #include "FontRenderer.h"
 #include "SensorStream/StreamReceiver.h"
@@ -142,6 +143,7 @@ bool Application::initialize(int argc, char* argv[])
         std::cerr << "Warning: sensor stream not started, continuing without iPhone" << std::endl;
     }
     initializeAudio();
+    initializeSpatial();
 
     m_statsStart = std::chrono::steady_clock::now();
     m_splashStart = m_statsStart;
@@ -150,7 +152,8 @@ bool Application::initialize(int argc, char* argv[])
     m_running = true;
 
     std::cout << "[CONTROLS] R — recenter, M — phone mount (auto/0/90/180/270), K — occlusion, H — shadows, "
-                 "E — room lighting/reflections, U — sound on/off, L — LiDAR overlay, P — reprojection, O — prediction, ESC — exit" << std::endl;
+                 "E — room lighting/reflections, U — sound on/off, V — room mesh/planes, F5 — save world map, L — LiDAR overlay, "
+                 "P — reprojection, O — prediction, ESC — exit; pinch (thumb+index) — grab and move objects" << std::endl;
     return true;
 }
 
@@ -158,7 +161,7 @@ void Application::run()
 {
     auto lastTime = std::chrono::steady_clock::now();
 
-    while (m_running && !glfwWindowShouldClose(m_window)) {
+    while (m_running && !glfwWindowShouldClose(m_window) && !(m_stopFlag && m_stopFlag->load())) {
         auto currentTime = std::chrono::steady_clock::now();
         m_deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
         lastTime = currentTime;
@@ -191,6 +194,7 @@ void Application::shutdown()
         m_visionCv.notify_all();
         if (m_visionThread.joinable()) m_visionThread.join();
     }
+    shutdownSpatial();   // карта мира сохраняется до остановки трекинга
     if (m_tracking) {
         m_tracking->stop();
     }
@@ -526,7 +530,7 @@ void Application::updateAudio()
 
 void Application::visionWorker()
 {
-    int64_t lastEnv = 0, lastMarkers = 0;
+    int64_t lastEnv = 0, lastMarkers = 0, lastHands = 0;
     while (m_visionRunning) {
         sensorstream::VideoFramePtr f;
         {
@@ -546,6 +550,37 @@ void Application::visionWorker()
             lastEnv = now;
             m_envProbe->addFrame(f->y.data(), f->width, f->uv.data(), ((f->width + 1) / 2) * 2, f->width, f->height,
                                  f->fx, f->fy, f->cx, f->cy, glm::quat(worldFromCam), f->fullRange, f->bt709);
+        }
+        // Руки: до 20 раз в секунду (детектор ладоней + 21 сустав, глубина — LiDAR)
+        if (m_handsProvider && now - lastHands > 50'000'000LL) {
+            lastHands = now;
+            const auto eye = m_tracking->predictEye(midExposure);
+            LensEngine::HandTrackingProvider::Camera cam;
+            cam.fx = f->fx;
+            cam.fy = f->fy;
+            cam.cx = f->cx;
+            cam.cy = f->cy;
+            cam.worldFromCam = glm::quat(worldFromCam);
+            cam.position = eye.valid ? glm::vec3(eye.position) : glm::vec3(0.0f);
+            cam.headPosition = cam.position;
+            std::shared_ptr<sensorstream::DepthFrame> d;
+            {
+                std::lock_guard<std::mutex> lock(m_depthMutex);
+                d = m_overlayDepth;
+            }
+            LensEngine::HandTrackingProvider::Depth depth;
+            if (d && !d->depth.empty()) {
+                depth.data = d->depth.data();
+                depth.width = d->width;
+                depth.height = d->height;
+                depth.fx = d->fx;
+                depth.fy = d->fy;
+                depth.cx = d->cx;
+                depth.cy = d->cy;
+            }
+            m_handsProvider->process(midExposure, f->y.data(), f->width, f->uv.data(), ((f->width + 1) / 2) * 2, f->width,
+                                     f->height, cam, depth.data ? &depth : nullptr);
+            m_handsPcNs = sensorstream::pcNowNs();
         }
         // Метки ArUco: 15 раз в секунду (детектор 3-15 мс на кадр)
         if (m_markers && now - lastMarkers > 66'000'000LL) {
@@ -735,6 +770,7 @@ void Application::update(float deltaTime)
             const auto st = m_tracking->status();
             if (st.hasFloor) m_scene->setFloorHeight(static_cast<float>(st.floorY));
         }
+        updateSpatial();
     }
     updateSplash();
     updateAudio();
@@ -764,9 +800,9 @@ void Application::updateHud()
         const auto st = m_tracking->status();
         const glm::mat4 worldFromEye = glm::inverse(m_viewMatrix[0]);
         if (st.lidarTracking) {
-            std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m, map %d kf%s", st.mode.c_str(),
+            std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m, map %d kf (%s), %d planes, %d anchors", st.mode.c_str(),
                           worldFromEye[3].x, worldFromEye[3].y, worldFromEye[3].z, st.lidarKeyframes,
-                          st.hasFloor ? ", floor found" : "");
+                          st.worldMap.c_str(), st.roomPlanes, st.anchors);
         } else {
             std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m", st.mode.c_str(),
                           worldFromEye[3].x, worldFromEye[3].y, worldFromEye[3].z);
@@ -784,8 +820,15 @@ void Application::updateHud()
     if (ss.clientConnected) {
         const int dw = m_depthW.load();
         if (dw > 0) {
-            std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR %dx%d%s, markers %d", ss.megabitsPerSecond, dw,
-                          m_depthH.load(), m_depthOverlay ? " (overlay L)" : "", m_markersInView.load());
+            std::string handsText = "hands -";
+            if (m_handsProvider && sensorstream::pcNowNs() - m_handsPcNs.load() < 400'000'000LL) {
+                handsText = "hands";
+                for (const auto& h : m_handsProvider->hands())
+                    handsText += std::string(h.right ? " R" : " L") + (h.pinching ? "(pinch)" : h.fist ? "(fist)" : "");
+                if (m_handsProvider->hands().empty()) handsText += " -";
+            }
+            std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR %dx%d%s, markers %d, %s", ss.megabitsPerSecond, dw,
+                          m_depthH.load(), m_depthOverlay ? " (overlay L)" : "", m_markersInView.load(), handsText.c_str());
         } else {
             std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR off", ss.megabitsPerSecond);
         }
@@ -898,6 +941,18 @@ void Application::render()
                                                0.5f + 0.5f * std::cos(6.2832f * (hue - 0.667f)), 1.0f),
                                      0.2f, 0.3f});
             }
+        }
+        // Руки, луч, меш комнаты, плоскости
+        std::vector<glm::vec4> colors, params;
+        appendSpatialDraws(transforms, meshIds, colors, params);
+        for (size_t i = 0; i < colors.size(); ++i) {
+            VulkanRenderer::ObjectMaterial m;
+            m.color = colors[i];
+            m.metallic = params[i].x;
+            m.roughness = params[i].y;
+            m.occlusionBias = params[i].z;
+            m.castShadow = params[i].w > 0.5f;
+            materials.push_back(m);
         }
         vk->setObjectMaterials(std::move(materials));
     }
@@ -1017,6 +1072,14 @@ void Application::onKeyPress(GLFWwindow* window, int key, int scancode, int acti
         if (app->m_tracking) app->m_tracking->setMount(app->m_mountSetting);
         std::cout << "[TRACKING] phone mount: " << (app->m_mountSetting < 0 ? std::string("auto") : std::to_string(app->m_mountSetting))
                   << std::endl;
+        break;
+    case GLFW_KEY_V:
+        app->m_showRoom = !app->m_showRoom;
+        app->m_roomVersionShown = 0;
+        std::cout << "[SCENE] room mesh + planes " << (app->m_showRoom ? "ON" : "OFF") << std::endl;
+        break;
+    case GLFW_KEY_F5:
+        if (app->m_tracking && !app->m_worldMapPath.empty()) app->m_tracking->saveWorldMap(app->m_worldMapPath, true);
         break;
     case GLFW_KEY_U:
         if (app->m_audio) {

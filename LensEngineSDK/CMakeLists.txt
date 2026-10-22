@@ -180,6 +180,8 @@ set(LENSENGINE_SOURCES
     src/LidarOdometry.cpp
     src/EnvironmentProbe.cpp
     src/MarkerTracker.cpp
+    src/HandTrackingProvider.cpp
+    src/SceneReconstruction.cpp
 )
 
 set(LENSENGINE_HEADERS
@@ -216,6 +218,8 @@ set(LENSENGINE_HEADERS
     include/LidarOdometry.h
     include/EnvironmentProbe.h
     include/MarkerTracker.h
+    include/HandTrackingProvider.h
+    include/SceneReconstruction.h
 )
 
 # Создание библиотеки
@@ -230,6 +234,9 @@ target_include_directories(LensEngineSDK PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:include>
 )
+
+# Модели (models/) ищутся и относительно исходников
+target_compile_definitions(LensEngineSDK PRIVATE LENSENGINE_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Связывание библиотек
 target_link_libraries(LensEngineSDK
@@ -321,11 +328,18 @@ if(BUILD_TESTS)
     target_link_libraries(test_tracking_session LensEngineSDK)
     add_executable(test_lidar_odometry tests/test_lidar_odometry.cpp)
     target_link_libraries(test_lidar_odometry LensEngineSDK)
+    add_executable(test_world_map tests/test_world_map.cpp)
+    target_link_libraries(test_world_map LensEngineSDK)
+    add_executable(test_scene_reconstruction tests/test_scene_reconstruction.cpp)
+    target_link_libraries(test_scene_reconstruction LensEngineSDK)
     add_executable(test_environment_probe tests/test_environment_probe.cpp)
     target_link_libraries(test_environment_probe LensEngineSDK)
     if(LENSENGINE_USE_OPENCV AND OpenCV_FOUND)
         add_executable(test_marker_tracker tests/test_marker_tracker.cpp)
         target_link_libraries(test_marker_tracker LensEngineSDK ${OpenCV_LIBS})
+        add_executable(test_hand_tracking tests/test_hand_tracking.cpp)
+        target_link_libraries(test_hand_tracking LensEngineSDK ${OpenCV_LIBS})
+        target_compile_definitions(test_hand_tracking PRIVATE LENSENGINE_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     endif()
 endif()
 

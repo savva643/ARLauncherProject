@@ -26,10 +26,14 @@ struct SceneObject {
     float metallic;       // 0 — пластик/краска, 1 — металл (отражает комнату)
     float roughness;      // 0 — зеркало, 1 — матовый
     bool onFloor;         // стоит на реальном полу (высота — от LiDAR), до того как пол найден — скрыт
+    bool onTable;         // ставится на найденный стол (плоскость LiDAR), до того — скрыт
+    bool grabbable;       // можно взять щипком
+    int anchorId;         // якорь карты мира (позиция сохраняется между запусками), 0 — нет
 
     SceneObject() : id(0), meshId(0), position(0.0f), rotation(1.0f, 0, 0, 0),
                     scale(1.0f), textureId(0), visible(true), boundingRadius(0.5f),
-                    color(0.2f, 0.7f, 1.0f, 1.0f), metallic(0.0f), roughness(0.5f), onFloor(false) {}
+                    color(0.2f, 0.7f, 1.0f, 1.0f), metallic(0.0f), roughness(0.5f), onFloor(false),
+                    onTable(false), grabbable(true), anchorId(0) {}
 };
 
 /**
@@ -70,6 +74,7 @@ public:
     uint32_t sphereMeshId() const { return m_sphereMeshId; }
     uint32_t torusMeshId() const { return m_torusMeshId; }
     const std::vector<SceneObject>& objects() const { return m_objects; }
+    SceneObject* objectAt(size_t index) { return index < m_objects.size() ? &m_objects[index] : nullptr; }
     
     // Синхронизация с реальной камерой
     void updateCameraFromAR(const glm::vec3& position, const glm::quat& rotation);

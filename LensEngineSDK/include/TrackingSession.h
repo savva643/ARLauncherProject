@@ -3,15 +3,20 @@
 
 #include "HeadTracker.h"
 #include "LidarOdometry.h"
+#include "SceneReconstruction.h"
 #include "VioTracker.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace LensEngine {
 
@@ -60,6 +65,28 @@ public:
         double lidarRmseMm = 0.0;
         bool hasFloor = false;
         double floorY = -1.5;          // высота пола в мире рендера (Y вверх), м
+        std::string worldMap;          // "нет", "ищу знакомое место…", "загружена"
+        int anchors = 0;
+        int roomPlanes = 0;
+    };
+
+    /// Якорь в мире (аналог WorldAnchor): живёт в карте комнаты и сохраняется вместе с ней
+    struct Anchor {
+        int id = 0;
+        std::string name;
+        glm::dvec3 position{0.0};             // мир рендера
+        glm::dquat orientation{1, 0, 0, 0};
+    };
+
+    enum class MapState { NoMap, Relocalizing, Relocalized };
+
+    /// Меш комнаты в мире рендера (Y вверх)
+    struct RoomMesh {
+        std::vector<glm::vec3> positions;
+        std::vector<glm::vec3> normals;
+        std::vector<SceneReconstruction::Kind> kinds;
+        std::vector<uint32_t> indices;
+        uint64_t version = 0;
     };
 
     TrackingSession();
@@ -95,6 +122,22 @@ public:
     void recenter();
     TrackingStatus status() const;
 
+    // ---- Карта мира (сохранение между запусками) и якоря
+    int addAnchor(const std::string& name, const glm::dvec3& position, const glm::dquat& orientation);
+    bool updateAnchor(int id, const glm::dvec3& position, const glm::dquat& orientation);
+    bool removeAnchor(int id);
+    std::vector<Anchor> anchors() const;
+    /// force = записать, даже если сохранённая карта ещё не найдена (новое место)
+    bool saveWorldMap(const std::string& path, bool force = false) const;
+    /// Загрузить карту: дальше идёт поиск знакомого места; когда найдено — якоря встают на свои места
+    bool loadWorldMap(const std::string& path);
+    MapState mapState() const { return m_mapState.load(); }
+
+    // ---- Меш комнаты и плоскости (обновляются раз в секунду в своём потоке)
+    RoomMesh roomMesh() const;
+    std::vector<SceneReconstruction::Plane> roomPlanes() const;   // мир рендера
+    uint64_t roomVersion() const { return m_roomVersion.load(); }
+
 private:
     glm::dquat deviceFromEye() const;
     void updateMount(const glm::dvec3& accel);
@@ -104,6 +147,36 @@ private:
     HeadTracker m_head;
     std::unique_ptr<VioTracker> m_vio;
     LidarOdometry m_lidar;
+    mutable std::mutex m_lidarMutex;          // m_lidar, карта, якоря
+    SceneReconstruction m_recon;
+    std::atomic<bool> m_reconDirty{false};
+    std::atomic<uint64_t> m_roomVersion{0};
+    std::thread m_sceneThread;
+    std::atomic<bool> m_sceneRunning{false};
+    std::mutex m_sceneWakeMutex;
+    std::condition_variable m_sceneWake;
+    int m_depthCounter = 0;
+    // карта мира
+    struct StoredAnchor {
+        int id = 0;
+        std::string name;
+        LidarOdometry::Pose pose;             // мир LiDAR-карты (Z вверх)
+    };
+    std::vector<StoredAnchor> m_anchors;      // в текущем мире LiDAR
+    std::vector<StoredAnchor> m_mapAnchors;   // из файла — ждут релокализации
+    int m_nextAnchorId = 1;
+    std::unique_ptr<LidarOdometry> m_savedLidar;
+    std::string m_savedRecon;
+    std::atomic<MapState> m_mapState{MapState::NoMap};
+    int m_relocCursor = 0;
+    bool m_relocPending = false;
+    LidarOdometry::Pose m_relocCandidate;
+    glm::dvec3 toRender(const glm::dvec3& lidarWorld) const;
+    glm::dquat toRenderRotation(const glm::dquat& lidarWorld) const;
+    glm::dvec3 fromRender(const glm::dvec3& render) const;
+    glm::dquat fromRenderRotation(const glm::dquat& render) const;
+    void applyRelocalization(const LidarOdometry::Pose& savedFromCurrent);
+    void sceneLoop();
     std::atomic<int64_t> m_lidarFixT{0};
     int64_t m_lastDepthT = 0;
     std::atomic<int> m_lidarKeyframes{0};

@@ -140,6 +140,7 @@ set(ARLAUNCHER_SOURCES
     src/FontRenderer.cpp
     src/LiDARVisualizer.cpp
     src/AudioEngine.cpp
+    src/ApplicationSpatial.cpp
     ui/UIRenderer.cpp
     ui/UIElement.cpp
     ui/Window.cpp

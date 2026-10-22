@@ -88,6 +88,13 @@ public:
     bool positionAt(int64_t tNs, glm::dvec3& out) const;
     /// Вектор из мира трекера в мир внешнего трекера (обратный поворот рысканья)
     glm::dvec3 worldToFixDirection(const glm::dvec3& v) const;
+    /// Точка из мира трекера в мир внешнего трекера (обратное к fixToWorld)
+    glm::dvec3 worldToFix(const glm::dvec3& p) const;
+    /// Поворот мира внешнего трекера относительно мира трекера (вокруг вертикали)
+    double fixYawOffset() const;
+    /// Мир внешнего трекера сменился: p_new = Rz(yaw) * p_old + t (релокализация по сохранённой карте).
+    /// Мир трекера при этом не двигается — картинка не прыгает.
+    void rebaseFix(double yaw, const glm::dvec3& t);
 
     glm::dvec3 gyroBias() const;
     bool isStill() const;

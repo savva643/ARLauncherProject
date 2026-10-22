@@ -326,6 +326,27 @@ glm::dvec3 HeadTracker::worldToFixDirection(const glm::dvec3& v) const
     return glm::angleAxis(-m_vioYawOffset, glm::dvec3(0, 0, 1)) * v;
 }
 
+glm::dvec3 HeadTracker::worldToFix(const glm::dvec3& p) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return glm::angleAxis(-m_vioYawOffset, glm::dvec3(0, 0, 1)) * (p + m_posOrigin);
+}
+
+double HeadTracker::fixYawOffset() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_vioYawOffset;
+}
+
+void HeadTracker::rebaseFix(double yaw, const glm::dvec3& t)
+{
+    // fixToWorld(p) = R(off) p - o. Нужно: R(off') (Rz(yaw) p + t) - o' == R(off) p - o
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_vioYawOffset = wrapPi(m_vioYawOffset - yaw);
+    m_posOrigin = glm::angleAxis(m_vioYawOffset, glm::dvec3(0, 0, 1)) * t + m_posOrigin;
+    m_lastFixQ = glm::angleAxis(yaw, glm::dvec3(0, 0, 1)) * m_lastFixQ;
+}
+
 bool HeadTracker::hasFixFrame() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);

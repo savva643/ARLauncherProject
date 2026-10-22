@@ -162,6 +162,8 @@ public:
         glm::vec4 color{0.2f, 0.7f, 1.0f, 1.0f};   // sRGB + альфа
         float metallic = 0.0f;
         float roughness = 0.5f;
+        float occlusionBias = 0.0f;   // м: объект, совпадающий с реальной поверхностью (рука, меш комнаты), не прячется ею
+        bool castShadow = true;
     };
     struct SceneParams {
         glm::mat3 cvFromEye{1.0f};                            // как у passthrough: луч глаза -> пиксель видео/LiDAR
@@ -184,6 +186,8 @@ public:
     void setObjectMaterials(std::vector<ObjectMaterial> materials) { m_materials = std::move(materials); }
     /// Карта окружения equirect RGBA8 (EnvironmentProbe) — только до render pass (latch)
     void uploadEnvironmentMap(const uint8_t* rgba, uint32_t width, uint32_t height, uint64_t version);
+    /// Заменить геометрию меша (меш комнаты меняется раз в секунду); старые буферы удаляются, когда GPU их отпустит
+    bool updateMesh(uint32_t meshId, const std::vector<float>& vertices, const std::vector<uint32_t>& indices);
 
     VkExtent2D swapchainExtent() const { return m_swapchainExtent; }
     const char* presentModeName() const;
@@ -322,6 +326,14 @@ private:
     };
     std::vector<VulkanMesh> m_meshes;
     uint32_t m_nextMeshId;
+    struct RetiredMesh {
+        VulkanMesh mesh;
+        uint64_t frame;
+    };
+    std::vector<RetiredMesh> m_retiredMeshes;   // удаляются через kFramesInFlight кадров
+    bool fillMesh(VulkanMesh& mesh, const std::vector<float>& vertices, const std::vector<uint32_t>& indices);
+    void releaseMeshBuffers(VulkanMesh& mesh);
+    void collectRetiredMeshes(bool all);
     
     // Видео текстура для RGB камеры (Vulkan textured quad)
     uint32_t m_videoTextureId;

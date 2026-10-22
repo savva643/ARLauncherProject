@@ -23,6 +23,7 @@ namespace LensEngine {
     class TrackingSession;
     class EnvironmentProbe;
     class MarkerTracker;
+    class HandTrackingProvider;
 }
 
 namespace sensorstream {
@@ -67,6 +68,7 @@ public:
     // Статус
     bool isRunning() const { return m_running; }
     void requestExit() { m_running = false; }
+    void setStopFlag(const std::atomic<bool>* flag) { m_stopFlag = flag; }
 
 private:
     bool initializeWindow();
@@ -127,7 +129,50 @@ private:
     void updateAudio();
     float lidarOcclusion(const glm::vec3& worldPos);   // 1 — реальная поверхность ближе точки, 0 — нет, -1 — не видно
 
+    // ---- Пространство (ApplicationSpatial.cpp): руки и ввод, меш комнаты, плоскости, карта мира
+    std::unique_ptr<LensEngine::HandTrackingProvider> m_handsProvider;
+    std::atomic<int64_t> m_handsPcNs{0};      // когда руки последний раз посчитаны
+    bool m_handsEnabled = true;               // ARL_HANDS
+    bool m_showRoom = false;                  // V — меш комнаты и плоскости
+    std::string m_worldMapPath;               // ARL_WORLD_MAP; пусто — без сохранения
+    uint32_t m_roomMeshIds[6] = {};           // по классам поверхности
+    uint32_t m_planeMeshId = 0;
+    uint64_t m_roomVersionShown = 0;
+    struct PlaneView {
+        glm::mat4 transform;
+        glm::vec4 color;
+    };
+    std::vector<PlaneView> m_planeViews;
+    int m_lastMapState = 0;
+    // Щипок: взять и перенести объект (как в visionOS: смотришь/указываешь + щипок)
+    struct Grab {
+        bool active = false;
+        bool rightHand = false;
+        size_t object = 0;
+        glm::vec3 objectStart{0.0f};
+        glm::vec3 handStart{0.0f};
+        float gain = 1.0f;
+    } m_grab;
+    bool m_prevPinch[2] = {false, false};
+    int m_hoverObject = -1;
+    // Взгляд (EyeTracker или голова) — для «смотришь + щипок»
+    bool m_gazeValid = false;
+    bool m_gazeFromEyes = false;
+    glm::vec3 m_gazeOrigin{0.0f};
+    glm::vec3 m_gazeDirection{0.0f, 0.0f, -1.0f};
+    void initializeSpatial();
+    void shutdownSpatial();
+    void updateSpatial();
+    void updateRoomMesh();
+    void updateInteraction();
+    /// Руки, луч, меш комнаты, плоскости: colors — sRGB+альфа, params — metallic, roughness, запас окклюзии, тень (1/0)
+    void appendSpatialDraws(std::vector<glm::mat4>& transforms, std::vector<uint32_t>& meshIds,
+                            std::vector<glm::vec4>& colors, std::vector<glm::vec4>& params);
+
     bool m_running;
+    const std::atomic<bool>* m_stopFlag = nullptr;
+    std::chrono::steady_clock::time_point m_lastAutosave = std::chrono::steady_clock::now();
+    std::thread m_saveThread;
     bool m_initialized;
 
     int m_windowWidth;

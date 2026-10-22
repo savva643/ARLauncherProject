@@ -165,7 +165,7 @@ std::vector<uint32_t> Scene::getVisibleMeshIds() const
 void Scene::setFloorHeight(float y)
 {
     for (auto& obj : m_objects) {
-        if (!obj.onFloor) continue;
+        if (!obj.onFloor || obj.anchorId != 0) continue;
         obj.position.y = y + 0.5f * obj.scale.y;   // меши единичные: от -0.5 до 0.5
         obj.visible = true;
     }
@@ -431,6 +431,14 @@ void Scene::createDemoScene(Renderer* renderer)
     floorCube.visible = false;
     addObject(floorCube);
 
+    // На столе (когда LiDAR найдёт стол): золотой тор
+    SceneObject tableTorus;
+    tableTorus.scale = glm::vec3(0.12f);
+    tableTorus.meshId = m_torusMeshId;
+    tableTorus.onTable = true;
+    tableTorus.visible = false;
+    addObject(tableTorus);
+
     // Материалы: кубы — краска разных цветов, сферы — хром и золото (отражают комнату), тор — глянцевый
     const glm::vec4 paints[] = {{0.93f, 0.33f, 0.25f, 1.0f}, {0.25f, 0.70f, 0.95f, 1.0f}, {0.35f, 0.85f, 0.45f, 1.0f},
                                 {0.98f, 0.80f, 0.25f, 1.0f}, {0.70f, 0.45f, 0.95f, 1.0f}, {0.95f, 0.95f, 0.95f, 1.0f},
@@ -448,6 +456,10 @@ void Scene::createDemoScene(Renderer* renderer)
                                : glm::vec4(0.9f, 0.9f, 0.92f, 1.0f);       // полированный металл
             obj.metallic = 1.0f;
             obj.roughness = k == 2 ? 0.25f : 0.08f;
+        } else if (obj.meshId == m_torusMeshId && obj.onTable) {
+            obj.color = glm::vec4(1.0f, 0.78f, 0.34f, 1.0f);   // золото
+            obj.metallic = 1.0f;
+            obj.roughness = 0.12f;
         } else if (obj.meshId == m_torusMeshId) {
             obj.color = glm::vec4(0.85f, 0.12f, 0.18f, 1.0f);
             obj.metallic = 0.0f;
