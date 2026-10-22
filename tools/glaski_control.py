@@ -80,6 +80,15 @@ RUN_SECTIONS = [
         ("ARL_LENS_SCALE", "Масштаб", "float", 1.0, "<1 — меньше чёрных углов"),
         ("ARL_LENS_SHIFT", "Сдвиг центра к носу", "float", 0.0, "доля полуширины глаза"),
     ]),
+    ("Экран iPhone (картинка с ПК)", [
+        ("ARL_RETURN_ENC", "Кодер", ["auto", "nvenc", "vaapi", "x264", "rkmpp", "v4l2"], "auto",
+         "auto: NVENC → VAAPI → RKMPP → x264; режим включает iPhone"),
+        ("ARL_RETURN_OVERSCAN", "Запас под доворот", "float", 1.12, "кадр шире экрана во столько раз"),
+        ("ARL_RETURN_LEAD_MS", "Упреждение, мс", "float", -1.0, "-1 — авто по подтверждениям iPhone"),
+        ("ARL_RETURN_HUD", "Панель статуса и на iPhone", "bool", False, ""),
+        ("SIM_DISPLAY", "Симулятор как экран", ["off", "mono", "stereo", "lens"], "off", "проверка без iPhone"),
+        ("SIM_LOCAL_CAMERA", "Симулятор: фон — своя камера", "bool", False, ""),
+    ]),
     ("Модули шлема", [
         ("ARL_MIC_MONITOR", "Микрофон в наушники", "bool", False, "F7; F6 — запись WAV"),
         ("SIM_EYES", "Симулятор: камеры глаз", "bool", True, "G — калибровка взгляда"),
@@ -166,6 +175,8 @@ def launcher_env(cfg):
             elif key == "ARL_PREDICT_MS" and float(value) < 0:
                 continue
             elif key == "ARL_FOV" and float(value) <= 0:
+                continue
+            elif key == "ARL_RETURN_LEAD_MS" and float(value) < 0:
                 continue
             else:
                 env[key] = str(value)
@@ -477,6 +488,10 @@ def run_gui():
             cmd.append("--eyes")
         if c.get("SIM_AUDIO", True):
             cmd.append("--audio")
+        if c.get("SIM_DISPLAY", "off") != "off":
+            cmd += ["--display", c["SIM_DISPLAY"], "--display-size", "960x444"]
+            if c.get("SIM_LOCAL_CAMERA", False):
+                cmd.append("--local-camera")
         run_steps("Симулятор", [(cmd, str(build_dir(c)), None)])
 
     def do_openvins():

@@ -29,6 +29,9 @@ namespace LensEngine {
 
 namespace sensorstream {
     class StreamReceiver;
+    class ReturnEncoder;
+    struct DisplayRequest;
+    struct ReturnAck;
     struct DepthFrame;
     struct VideoFrame;
     struct EyeImage;
@@ -194,6 +197,23 @@ private:
     /// Руки, луч, меш комнаты, плоскости: colors — sRGB+альфа, params — metallic, roughness, запас окклюзии, тень (1/0)
     void appendSpatialDraws(std::vector<glm::mat4>& transforms, std::vector<uint32_t>& meshIds,
                             std::vector<glm::vec4>& colors, std::vector<glm::vec4>& params);
+
+    // ---- Обратный поток (ApplicationReturn.cpp): картинка лаунчера на экран телефона
+    //      моно / стерео / стерео + линзы; телефон доворачивает кадр своим гироскопом
+    struct ReturnState;
+    std::unique_ptr<ReturnState> m_return;
+    std::unique_ptr<sensorstream::ReturnEncoder> m_returnEncoder;
+    void initializeReturn();
+    void shutdownReturn();
+    void updateReturn();                 // главный поток: включение/выключение режима
+    bool returnActive() const;
+    bool returnLocalCamera() const;
+    bool returnHidesHud() const;
+    /// latchFrame: FOV глаза для телефона (tan половины угла) и упреждение предсказания
+    bool returnEyeFov(float& tanX, float& tanY, double& leadMs) const;
+    void returnLatched(int64_t displayPhoneNs, int64_t cameraPhoneNs, float tanX, float tanY);
+    void handleReturnAck(const sensorstream::ReturnAck& ack);
+    std::string returnStatusText() const;
 
     bool m_running;
     const std::atomic<bool>* m_stopFlag = nullptr;

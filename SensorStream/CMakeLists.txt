@@ -14,11 +14,13 @@ pkg_check_modules(SS_FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavutil libsws
 add_library(SensorStream STATIC
     src/StreamReceiver.cpp
     src/VideoDecoder.cpp
+    src/ReturnEncoder.cpp
     include/SensorStream/Protocol.h
     include/SensorStream/Types.h
     include/SensorStream/ClockSync.h
     include/SensorStream/VideoDecoder.h
     include/SensorStream/StreamReceiver.h
+    include/SensorStream/ReturnEncoder.h
 )
 target_include_directories(SensorStream PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(SensorStream PUBLIC PkgConfig::SS_FFMPEG Threads::Threads)

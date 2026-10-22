@@ -33,6 +33,8 @@ public:
     using VideoCallback = std::function<void(const VideoFramePtr&)>;
     using AudioCallback = std::function<void(const AudioChunk&)>;
     using EyeCallback = std::function<void(const EyeImage&)>;
+    using DisplayCallback = std::function<void(const DisplayRequest&)>;
+    using AckCallback = std::function<void(const ReturnAck&)>;
 
     StreamReceiver();
     ~StreamReceiver();
@@ -51,6 +53,15 @@ public:
     void setVideoCallback(VideoCallback cb) { m_onVideo = std::move(cb); }
     void setAudioCallback(AudioCallback cb) { m_onAudio = std::move(cb); }
     void setEyeCallback(EyeCallback cb) { m_onEye = std::move(cb); }
+    void setDisplayCallback(DisplayCallback cb) { m_onDisplay = std::move(cb); }
+    void setAckCallback(AckCallback cb) { m_onAck = std::move(cb); }
+
+    /// Пакет на телефон (тот клиент, что прислал DISPLAY). Из любого потока; false — некому/ошибка.
+    /// Блокирует не дольше ~250 мс (если телефон перестал читать — соединение рвётся).
+    bool sendToPhone(PacketType type, const uint8_t* payload, size_t size);
+    bool hasReturnClient() const { return m_returnFd.load() >= 0; }
+    /// Последний запрос показа (mode = 0 — телефон картинку не ждёт)
+    DisplayRequest displayRequest() const;
 
     /// Последний декодированный кадр (nullptr если ещё нет). Потокобезопасно, без копирования пикселей.
     VideoFramePtr latestVideoFrame() const;
@@ -89,6 +100,8 @@ private:
     void handleImu(const uint8_t* p, size_t n);
     void handleAudio(const uint8_t* p, size_t n);
     void handleEye(const uint8_t* p, size_t n);
+    void handleDisplay(Client& c, const uint8_t* p, size_t n);
+    void handleAck(const uint8_t* p, size_t n);
     void handleDepth(const uint8_t* p, size_t n);
     void handleLegacyJpeg(const uint8_t* p, size_t n);
     void handleLegacyImu(const uint8_t* p, size_t n);
@@ -111,6 +124,15 @@ private:
     VideoCallback m_onVideo;
     AudioCallback m_onAudio;
     EyeCallback m_onEye;
+    DisplayCallback m_onDisplay;
+    AckCallback m_onAck;
+
+    // Обратный поток на телефон
+    std::atomic<int> m_returnFd{-1};
+    std::mutex m_sendMutex;          // запись в m_returnFd и его закрытие
+    uint64_t m_sendSequence = 0;
+    mutable std::mutex m_displayMutex;
+    DisplayRequest m_display;
 
     ClockSync m_clock;
 

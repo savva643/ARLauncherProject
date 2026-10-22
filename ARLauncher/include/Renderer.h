@@ -179,6 +179,7 @@ public:
         glm::vec3 lightDirWorld{0.3f, 0.9f, 0.3f};   // к источнику
         glm::vec3 lightColor{0.6f};       // линейный RGB (блики)
         float shadowStrength = 0.45f;
+        bool alphaLayer = false;          // фон прозрачный (кадр для телефона, фон — его камера): тени — в альфу
         std::array<glm::vec3, 9> sh{};    // SH окружения в мире (линейный RGB); все нули — нейтральный свет
         float opacity = 1.0f;
     };
@@ -202,6 +203,20 @@ public:
 
     /// Заменить геометрию меша (меш комнаты меняется раз в секунду); старые буферы удаляются, когда GPU их отпустит
     bool updateMesh(uint32_t meshId, const std::vector<float>& vertices, const std::vector<uint32_t>& indices);
+
+    // ---- Чтение готового кадра (обратный поток на телефон)
+    struct Readback {
+        const uint8_t* pixels = nullptr;
+        int width = 0, height = 0, stride = 0;
+        bool bgra = true;
+    };
+    /// Колбэк зовётся в endFrame, когда GPU дорисовал кадр (рендер-поток ждёт GPU — только пока включено)
+    void setReadbackCallback(std::function<void(const Readback&)> cb) { m_readbackCb = std::move(cb); }
+    void setReadbackEnabled(bool enabled) { m_readbackEnabled = enabled; }
+    bool readbackSupported() const { return m_swapchainTransferSrc; }
+    void setClearColor(const glm::vec4& c) { m_clearColor = c; }
+    /// Панель статуса (2D поверх кадра) не рисовать — кадр уходит на телефон
+    void setOverlayHidden(bool hidden) { m_overlayHidden = hidden; }
 
     VkExtent2D swapchainExtent() const { return m_swapchainExtent; }
     const char* presentModeName() const;
@@ -308,6 +323,18 @@ private:
     void destroyLens();
     void drawLensPass(VkCommandBuffer cmd);
     uint64_t m_frameNumber = 0;
+    glm::vec4 m_clearColor{0.0f, 0.0f, 0.0f, 1.0f};
+    std::function<void(const Readback&)> m_readbackCb;
+    bool m_readbackEnabled = false;
+    bool m_overlayHidden = false;
+    bool m_swapchainTransferSrc = false;
+    std::array<VkBuffer, kFramesInFlight> m_readbackBuf{};
+    std::array<VkDeviceMemory, kFramesInFlight> m_readbackMem{};
+    std::array<void*, kFramesInFlight> m_readbackPtr{};
+    std::array<VkDeviceSize, kFramesInFlight> m_readbackSize{};
+    std::array<bool, kFramesInFlight> m_readbackCoherent{};
+    bool recordReadback(VkCommandBuffer cmd);
+    void destroyReadback();
     uint64_t m_sceneUboFrame = UINT64_MAX;
     bool createSceneResources();
     void destroySceneResources();

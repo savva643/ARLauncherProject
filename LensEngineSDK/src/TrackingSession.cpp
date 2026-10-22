@@ -493,6 +493,23 @@ TrackingSession::EyePose TrackingSession::predictEye(int64_t phoneTimeNs) const
     return out;
 }
 
+TrackingSession::DisplayWarp TrackingSession::displayWarp(int64_t targetPhoneNs) const
+{
+    DisplayWarp w;
+    const int64_t tRef = m_lastImuT.load();
+    glm::dquat ref;
+    if (tRef == 0 || !m_head.orientationAt(tRef, ref)) return w;
+    const HeadTracker::State s = m_head.predict(targetPhoneNs);
+    if (!s.initialized) return w;
+    w.valid = true;
+    w.tRefNs = tRef;
+    w.predFromRef = glm::normalize(glm::conjugate(ref) * s.orientation);
+    w.eyeFromDevice = glm::conjugate(deviceFromEye());
+    w.cameraFromDevice = glm::conjugate(deviceFromCameraCV());
+    w.gyroBias = m_head.gyroBias();
+    return w;
+}
+
 bool TrackingSession::cameraOrientationAt(int64_t phoneTimeNs, glm::dquat& out) const
 {
     glm::dquat dev;

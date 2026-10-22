@@ -89,6 +89,11 @@ void main() {
         vec3 under = vec3(0.0);
         if ((flags & 4) != 0 && cameraUv(vPosEye, uv, c)) under = videoRgb(uv);
         float s = f.lightColor.w * o.color.a * visible;
+        if ((flags & 32) != 0) {
+            // Слой для телефона (фон — его камера): тень = чёрный с альфой s (цвет MIN -> 0, альфа MAX)
+            outColor = vec4(0.0, 0.0, 0.0, s);
+            return;
+        }
         outColor = vec4(under * (1.0 - s), 1.0);   // blend MIN с уже нарисованным видео
         return;
     }

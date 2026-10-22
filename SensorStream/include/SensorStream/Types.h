@@ -73,6 +73,29 @@ struct EyeImage {
     std::vector<uint8_t> pixels;    // GRAY8
 };
 
+/// Запрос телефона: показывать на нём картинку лаунчера (пакет DISPLAY)
+struct DisplayRequest {
+    int mode = 0;                   // ReturnMode: 0 выкл, 1 моно, 2 стерео, 3 стерео + линзы
+    bool localCamera = false;       // фон — своя камера телефона, ПК шлёт объекты с альфой
+    bool hevc = false;
+    int width = 0, height = 0;      // размер кадра (ландшафт, оба глаза вместе)
+    int fps = 60;
+    int bitrateKbps = 12000;
+    float tanX = 0, tanY = 0;       // полуугол глаза (tan), 0 — решает ПК
+    float ipd = 0.063f;
+    float refreshHz = 60.0f;
+    int64_t phoneTimeNs = 0;
+};
+
+/// Подтверждение показа кадра на телефоне (пакет ACK)
+struct ReturnAck {
+    uint32_t frameId = 0;
+    bool needKeyframe = false;
+    int64_t receivedNs = 0;         // часы телефона
+    int64_t displayNs = 0;
+    uint32_t decodeUs = 0;
+};
+
 struct StreamStats {
     bool clientConnected = false;
     bool protocolV2 = false;

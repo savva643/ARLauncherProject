@@ -120,6 +120,18 @@ public:
     glm::dquat eyeToCameraRotation() const;
 
     void recenter();
+
+    /// Для доворота картинки на дисплее телефона (обратный поток): относительные повороты не зависят от мира,
+    /// поэтому телефон досчитывает их своим гироскопом.
+    struct DisplayWarp {
+        bool valid = false;
+        int64_t tRefNs = 0;                         // последний сэмпл IMU (часы телефона)
+        glm::dquat predFromRef{1, 0, 0, 0};         // R_dev(tRef)^-1 * R_dev_pred(target): поворот устройства tRef -> target
+        glm::dquat eyeFromDevice{1, 0, 0, 0};
+        glm::dquat cameraFromDevice{1, 0, 0, 0};    // камера OpenCV
+        glm::dvec3 gyroBias{0.0};
+    };
+    DisplayWarp displayWarp(int64_t targetPhoneNs) const;
     TrackingStatus status() const;
 
     // ---- Карта мира (сохранение между запусками) и якоря

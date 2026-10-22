@@ -141,6 +141,7 @@ set(ARLAUNCHER_SOURCES
     src/LiDARVisualizer.cpp
     src/AudioEngine.cpp
     src/ApplicationSpatial.cpp
+    src/ApplicationReturn.cpp
     ui/UIRenderer.cpp
     ui/UIElement.cpp
     ui/Window.cpp

@@ -17,6 +17,8 @@
 #include "ARLauncherAPI.h"
 #include "FontRenderer.h"
 #include "SensorStream/StreamReceiver.h"
+#include "SensorStream/ReturnEncoder.h"
+#include "ApplicationReturnState.h"
 
 #include <GLFW/glfw3.h>
 #ifdef USE_OPENGL
@@ -183,6 +185,7 @@ void Application::shutdown()
         return;
     }
 
+    shutdownReturn();   // кодер шлёт через m_stream — останавливается первым
     if (m_stream) {
         m_stream->stop();
     }
@@ -479,6 +482,9 @@ bool Application::initializeSensorStream()
     m_micMonitor = envFlag("ARL_MIC_MONITOR");
     m_stream->setAudioCallback([this](const sensorstream::AudioChunk& a) { handleMicAudio(a); });
 
+    // Обратный поток: картинка лаунчера на экран телефона (DISPLAY от телефона включает)
+    initializeReturn();
+
     if (!m_stream->start()) {
         return false;
     }
@@ -660,8 +666,11 @@ void Application::latchFrame()
                                              : 0.9f * (frame->width * 0.5f) / frame->fx;
     }
     const float eyeAspect = m_stereo ? aspect * 0.5f : aspect;
-    const float tanY = tanX / eyeAspect;
-    glm::mat4 proj = glm::perspectiveRH_ZO(2.0f * std::atan(tanY), eyeAspect, 0.05f, 200.0f);
+    float tanY = tanX / eyeAspect;
+    // Картинка для телефона: FOV под его экран/линзы + запас под доворот, упреждение — по подтверждениям телефона
+    double returnLeadMs = 0.0;
+    const bool toPhone = returnEyeFov(tanX, tanY, returnLeadMs);
+    glm::mat4 proj = glm::perspectiveRH_ZO(2.0f * std::atan(tanY), tanX / tanY, 0.05f, 200.0f);
     proj[1][1] *= -1.0f;   // Vulkan: Y вниз
 
     // Сколько пройдёт от этого момента до фотонов: ожидание vblank + развёртка
@@ -672,13 +681,19 @@ void Application::latchFrame()
             ? periodMs + 3.0
             : 2.0 * periodMs + 3.0;
     }
+    if (toPhone) leadMs = returnLeadMs;
     if (!m_prediction) leadMs = 0;
 
     LensEngine::TrackingSession::EyePose eye;
     const bool clockOk = m_stream && m_stream->clock().valid();
+    int64_t displayPhone = 0;
     if (clockOk) {
-        const int64_t displayPhone = m_stream->clock().pcToPhone(now + int64_t(leadMs * 1e6));
+        displayPhone = m_stream->clock().pcToPhone(now + int64_t(leadMs * 1e6));
         eye = m_tracking->predictEye(displayPhone);
+    }
+    if (toPhone && clockOk) {
+        const int64_t cameraPts = frame ? frame->ptsNs + int64_t(frame->exposureUs) * 500 : 0;
+        returnLatched(displayPhone, cameraPts, tanX, tanY);
     }
 
     m_frameHasPose = eye.valid;
@@ -775,8 +790,10 @@ void Application::latchFrame()
                                          LensEngine::EnvironmentProbe::kHeight, m_envProbe->version());
             }
         }
+        // Фон — живая камера телефона: ПК рисует только объекты (и тени) на прозрачном фоне
+        sp.alphaLayer = returnLocalCamera();
         vk->setSceneParams(sp);
-        m_pt->valid = staleFade > 0.0f;
+        m_pt->valid = staleFade > 0.0f && !sp.alphaLayer;
         m_frameHasVideo = true;
 
         if (ageMs < 400.0) {
@@ -797,6 +814,7 @@ void Application::update(float deltaTime)
         }
         updateSpatial();
     }
+    updateReturn();
     updateSplash();
     updateAudio();
     updateHud();
@@ -872,7 +890,8 @@ void Application::updateHud()
         std::snprintf(buf, sizeof(buf), "iPhone: Disconnected (USB :9001 / Wi-Fi :9000)");
         m_depthW = 0;
     }
-    m_connectionText->setText(buf);
+    const std::string ret = returnStatusText();
+    m_connectionText->setText(ret.empty() ? std::string(buf) : std::string(buf) + " | " + ret);
 }
 
 void Application::updateSplash()
@@ -920,6 +939,7 @@ void Application::printStats()
             std::cout << " | iPhone: not connected";
         }
     }
+    if (returnActive()) std::cout << " | " << returnStatusText();
     std::cout << std::endl;
     m_renderFrames = 0;
     m_videoAgeMsSum = 0;
@@ -943,6 +963,7 @@ void Application::render()
     }
     const VkExtent2D ext = vk->swapchainExtent();
     m_renderer->set3DObjectsOpacity(m_3dObjectsOpacity);
+    vk->setOverlayHidden(returnHidesHud());
 
     std::vector<glm::mat4> transforms;
     std::vector<uint32_t> meshIds;
@@ -1033,7 +1054,7 @@ void Application::render()
     m_renderer->renderUIWindows();
 #endif
 
-    if (m_uiRenderer) {
+    if (m_uiRenderer && !returnHidesHud()) {
         m_uiRenderer->beginFrame();
         m_uiRenderer->render();
         m_uiRenderer->endFrame();

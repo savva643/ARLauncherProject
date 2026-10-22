@@ -295,3 +295,5 @@ ARLauncher (Native C++)
 ## 👤 Автор
 
 [Указать автора проекта]
+
+- [docs/HARDWARE.md](docs/HARDWARE.md) — железо для своего шлема (Orange Pi 5 Pro и модули), бюджет задержки

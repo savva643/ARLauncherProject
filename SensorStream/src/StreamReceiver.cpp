@@ -7,6 +7,7 @@
 #include <netinet/tcp.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <algorithm>
@@ -99,6 +100,17 @@ StreamStats StreamReceiver::stats() const
 void StreamReceiver::closeClient(Client& c)
 {
     if (c.fd >= 0) {
+        if (m_returnFd.load() == c.fd) {
+            // Отправитель не должен писать в закрытый (или уже переиспользованный) дескриптор
+            std::lock_guard<std::mutex> lock(m_sendMutex);
+            m_returnFd = -1;
+            DisplayRequest off;
+            {
+                std::lock_guard<std::mutex> dl(m_displayMutex);
+                m_display = off;
+            }
+            if (m_onDisplay) m_onDisplay(off);
+        }
         ::close(c.fd);
         if (c.streaming && m_config.verbose) std::cout << "[SensorStream] iPhone disconnected" << std::endl;
     }
@@ -210,6 +222,12 @@ void StreamReceiver::handlePacket(Client& c, uint8_t type, const uint8_t* p, siz
         break;
     case PacketType::Audio:
         handleAudio(p, n);
+        break;
+    case PacketType::DisplayRequest:
+        handleDisplay(c, p, n);
+        break;
+    case PacketType::ReturnAck:
+        handleAck(p, n);
         break;
     case PacketType::EyeImage:
         handleEye(p, n);
@@ -334,6 +352,107 @@ void StreamReceiver::handleAudio(const uint8_t* p, size_t n)
     for (size_t i = 0; i < count; ++i) a.samples[i] = int16_t(rdU16(p + kAudioHeaderSize + 2 * i));
     m_audioSamplesRx += count / size_t(a.channels);
     if (m_onAudio) m_onAudio(a);
+}
+
+void StreamReceiver::handleDisplay(Client& c, const uint8_t* p, size_t n)
+{
+    if (n < kDisplayRequestSize) return;
+    DisplayRequest r;
+    r.mode = std::min<int>(p[0], int(ReturnMode::StereoLens));
+    r.localCamera = (p[1] & kDisplayFlagLocalCamera) != 0;
+    r.hevc = (p[1] & kDisplayFlagHevc) != 0;
+    r.width = rdU16(p + 2) & ~1;
+    r.height = rdU16(p + 4) & ~1;
+    r.fps = std::max<int>(1, rdU16(p + 6));
+    r.bitrateKbps = int(std::max<uint32_t>(500, rdU32(p + 8)));
+    r.tanX = rdF32(p + 12);
+    r.tanY = rdF32(p + 16);
+    r.ipd = rdF32(p + 20);
+    r.refreshHz = rdF32(p + 24);
+    r.phoneTimeNs = rdI64(p + 32);
+    if (!(r.tanX >= 0.0f && r.tanX < 10.0f)) r.tanX = 0.0f;
+    if (!(r.tanY >= 0.0f && r.tanY < 10.0f)) r.tanY = 0.0f;
+    if (!(r.ipd > 0.04f && r.ipd < 0.09f)) r.ipd = 0.063f;
+    if (!(r.refreshHz > 20.0f && r.refreshHz < 500.0f)) r.refreshHz = 60.0f;
+    if (r.width < 64 || r.height < 64) r.mode = 0;
+    {
+        std::lock_guard<std::mutex> lock(m_sendMutex);
+        m_returnFd = r.mode ? c.fd : -1;
+    }
+    if (r.mode) {
+        // Отправка без бесконечной блокировки: телефон перестал читать — ошибка, кадр теряется
+        timeval tv{0, 250000};
+        setsockopt(c.fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+        int sndbuf = 2 * 1024 * 1024;
+        setsockopt(c.fd, SOL_SOCKET, SO_SNDBUF, &sndbuf, sizeof(sndbuf));
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_displayMutex);
+        m_display = r;
+    }
+    if (m_config.verbose) {
+        static const char* names[] = {"off", "mono", "stereo", "stereo+lens"};
+        std::cout << "[SensorStream] phone display: " << names[r.mode] << " " << r.width << "x" << r.height << " @" << r.fps
+                  << " fps, " << r.bitrateKbps / 1000.0 << " Mbit/s" << (r.localCamera ? ", phone camera background" : "")
+                  << std::endl;
+    }
+    if (m_onDisplay) m_onDisplay(r);
+}
+
+void StreamReceiver::handleAck(const uint8_t* p, size_t n)
+{
+    if (n < kReturnAckSize) return;
+    ReturnAck a;
+    a.frameId = rdU32(p);
+    a.needKeyframe = (p[4] & kAckFlagNeedKeyframe) != 0;
+    a.receivedNs = rdI64(p + 8);
+    a.displayNs = rdI64(p + 16);
+    a.decodeUs = rdU32(p + 24);
+    if (m_onAck) m_onAck(a);
+}
+
+DisplayRequest StreamReceiver::displayRequest() const
+{
+    std::lock_guard<std::mutex> lock(m_displayMutex);
+    return m_display;
+}
+
+bool StreamReceiver::sendToPhone(PacketType type, const uint8_t* payload, size_t size)
+{
+    std::lock_guard<std::mutex> lock(m_sendMutex);
+    const int fd = m_returnFd.load();
+    if (fd < 0) return false;
+    uint8_t header[kPacketHeaderSize];
+    header[0] = static_cast<uint8_t>(type);
+    wrU64BE(header + 1, ++m_sendSequence);
+    wrU32BE(header + 9, static_cast<uint32_t>(size));
+    iovec parts[2] = {{header, sizeof(header)}, {const_cast<uint8_t*>(payload), size}};
+    size_t total = sizeof(header) + size, sent = 0;
+    while (sent < total) {
+        // Остаток после частичной записи
+        iovec iov[2];
+        int count = 0;
+        size_t skip = sent;
+        for (const auto& part : parts) {
+            if (skip >= part.iov_len) { skip -= part.iov_len; continue; }
+            iov[count].iov_base = static_cast<uint8_t*>(part.iov_base) + skip;
+            iov[count].iov_len = part.iov_len - skip;
+            skip = 0;
+            ++count;
+        }
+        msghdr msg{};
+        msg.msg_iov = iov;
+        msg.msg_iovlen = size_t(count);
+        const ssize_t n = ::sendmsg(fd, &msg, MSG_NOSIGNAL);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            // Таймаут посреди пакета ломает поток: закрываем запись, сетевой поток увидит обрыв
+            if (sent > 0 || errno != EAGAIN) ::shutdown(fd, SHUT_RDWR);
+            return false;
+        }
+        sent += size_t(n);
+    }
+    return true;
 }
 
 void StreamReceiver::handleEye(const uint8_t* p, size_t n)

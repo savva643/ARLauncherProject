@@ -863,6 +863,7 @@ uint32_t VulkanRenderer::createUIWindow(const std::string& title,
     return 0;
 #endif
 }
+
 #endif // USE_VULKAN
 
 uint32_t OpenGLRenderer::createUIWindow(const std::string& title,
@@ -1603,6 +1604,7 @@ void VulkanRenderer::shutdown()
 
     destroyUIResources();
     collectRetiredMeshes(true);
+    destroyReadback();
     destroyLens();
     destroySceneResources();
     destroyPassthrough();
@@ -1755,7 +1757,7 @@ void VulkanRenderer::beginFrame()
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapchainExtent;
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clearValues[0].color = {{m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a}};
     clearValues[1].depthStencil = {1.0f, 0};
     renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
@@ -1773,6 +1775,8 @@ void VulkanRenderer::endFrame()
         drawLensPass(cmd);   // открывает проход на экран и рисует сцену через «линзу»
     }
     vkCmdEndRenderPass(cmd);
+    const uint32_t submittedSlot = m_frameSlot;
+    const bool readback = m_readbackEnabled && m_readbackCb && recordReadback(cmd);
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
         std::cerr << "Failed to record command buffer" << std::endl;
         return;
@@ -1808,6 +1812,25 @@ void VulkanRenderer::endFrame()
 
     VkResult result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
     m_frameSlot = (m_frameSlot + 1) % kFramesInFlight;
+
+    if (readback) {
+        // Кадр уходит на телефон сразу, как GPU его дорисовал (а не через kFramesInFlight кадров)
+        vkWaitForFences(m_device, 1, &m_frameFences[submittedSlot], VK_TRUE, UINT64_MAX);
+        if (!m_readbackCoherent[submittedSlot]) {
+            VkMappedMemoryRange range{};
+            range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
+            range.memory = m_readbackMem[submittedSlot];
+            range.size = VK_WHOLE_SIZE;
+            vkInvalidateMappedMemoryRanges(m_device, 1, &range);
+        }
+        Readback rb;
+        rb.pixels = static_cast<const uint8_t*>(m_readbackPtr[submittedSlot]);
+        rb.width = int(m_swapchainExtent.width);
+        rb.height = int(m_swapchainExtent.height);
+        rb.stride = rb.width * 4;
+        rb.bgra = m_swapchainImageFormat == VK_FORMAT_B8G8R8A8_UNORM || m_swapchainImageFormat == VK_FORMAT_B8G8R8A8_SRGB;
+        m_readbackCb(rb);
+    }
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
         recreateSwapchain();
@@ -2166,7 +2189,7 @@ bool VulkanRenderer::createGraphicsPipeline()
     colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
     colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;   // покрытие для слоя с альфой
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
@@ -2295,7 +2318,7 @@ void VulkanRenderer::renderUIWindows()
     // Called while render pass is active (beginFrame() starts it; endFrame() ends it)
     if (!m_frameActive) return;
 
-    if (m_uiOverlay.enabled) {
+    if (m_uiOverlay.enabled && !m_overlayHidden) {
         renderUITexturedQuad(m_uiOverlay, true);
     }
     if (m_ui3D.enabled) {
@@ -3140,6 +3163,9 @@ bool VulkanRenderer::createSwapchain()
     createInfo.imageExtent = m_swapchainExtent;
     createInfo.imageArrayLayers = 1;
     createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    // Чтение кадра для обратного потока на телефон
+    m_swapchainTransferSrc = (capabilities.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0;
+    if (m_swapchainTransferSrc) createInfo.imageUsage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     
     uint32_t queueFamilyIndices[] = {m_graphicsQueueFamily, m_presentQueueFamily};
     if (m_graphicsQueueFamily != m_presentQueueFamily) {
@@ -4355,6 +4381,7 @@ void VulkanRenderer::writeSceneUbo()
     if (m_ptHasFrame) flags |= 4;
     if (sp.reflections) flags |= 8;
     if (m_envReal) flags |= 16;
+    if (sp.alphaLayer) flags |= 32;
     const int videoFlags = (sp.fullRange ? 1 : 0) | (sp.bt709 ? 2 : 0);
     u.params = glm::vec4(float(flags), float(videoFlags), std::max(0.005f, sp.occlusionSoftness), 1.0f);
     std::memcpy(m_sceneUboPtr[m_frameSlot], &u, sizeof(u));
@@ -4638,7 +4665,7 @@ void VulkanRenderer::drawLensPass(VkCommandBuffer cmd)
     bi.framebuffer = m_swapchainFramebuffers[m_currentImageIndex];
     bi.renderArea.extent = m_swapchainExtent;
     std::array<VkClearValue, 2> clear{};
-    clear[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clear[0].color = {{m_clearColor.r, m_clearColor.g, m_clearColor.b, m_clearColor.a}};
     clear[1].depthStencil = {1.0f, 0};
     bi.clearValueCount = uint32_t(clear.size());
     bi.pClearValues = clear.data();
@@ -4655,6 +4682,113 @@ void VulkanRenderer::drawLensPass(VkCommandBuffer cmd)
                                          m_lens.centerShift, 0.0f)};
     vkCmdPushConstants(cmd, m_lensPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
     vkCmdDraw(cmd, 3, 1, 0, 0);
+}
+
+// ---------------- Чтение кадра (обратный поток на телефон) ----------------
+
+bool VulkanRenderer::recordReadback(VkCommandBuffer cmd)
+{
+    if (!m_swapchainTransferSrc) return false;
+    const uint32_t slot = m_frameSlot;
+    const VkDeviceSize size = VkDeviceSize(m_swapchainExtent.width) * m_swapchainExtent.height * 4;
+    if (m_readbackSize[slot] != size) {
+        // Слот свободен: его fence дождались в beginFrame
+        if (m_readbackBuf[slot] != VK_NULL_HANDLE) {
+            vkUnmapMemory(m_device, m_readbackMem[slot]);
+            vkDestroyBuffer(m_device, m_readbackBuf[slot], nullptr);
+            vkFreeMemory(m_device, m_readbackMem[slot], nullptr);
+            m_readbackBuf[slot] = VK_NULL_HANDLE;
+            m_readbackSize[slot] = 0;
+        }
+        VkBufferCreateInfo bi{};
+        bi.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bi.size = size;
+        bi.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        bi.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        if (vkCreateBuffer(m_device, &bi, nullptr, &m_readbackBuf[slot]) != VK_SUCCESS) return false;
+        VkMemoryRequirements req;
+        vkGetBufferMemoryRequirements(m_device, m_readbackBuf[slot], &req);
+        // Кэшируемая память — чтение CPU в разы быстрее; иначе просто видимая хосту
+        VkPhysicalDeviceMemoryProperties props;
+        vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &props);
+        uint32_t type = UINT32_MAX;
+        for (int pass = 0; pass < 2 && type == UINT32_MAX; ++pass) {
+            const VkMemoryPropertyFlags want = pass == 0
+                ? (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_CACHED_BIT)
+                : (VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            for (uint32_t i = 0; i < props.memoryTypeCount; ++i)
+                if ((req.memoryTypeBits & (1u << i)) && (props.memoryTypes[i].propertyFlags & want) == want) {
+                    type = i;
+                    break;
+                }
+        }
+        if (type == UINT32_MAX) {
+            vkDestroyBuffer(m_device, m_readbackBuf[slot], nullptr);
+            m_readbackBuf[slot] = VK_NULL_HANDLE;
+            return false;
+        }
+        VkMemoryAllocateInfo ai{};
+        ai.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        ai.allocationSize = req.size;
+        ai.memoryTypeIndex = type;
+        if (vkAllocateMemory(m_device, &ai, nullptr, &m_readbackMem[slot]) != VK_SUCCESS) {
+            vkDestroyBuffer(m_device, m_readbackBuf[slot], nullptr);
+            m_readbackBuf[slot] = VK_NULL_HANDLE;
+            return false;
+        }
+        vkBindBufferMemory(m_device, m_readbackBuf[slot], m_readbackMem[slot], 0);
+        vkMapMemory(m_device, m_readbackMem[slot], 0, VK_WHOLE_SIZE, 0, &m_readbackPtr[slot]);
+        m_readbackCoherent[slot] = (props.memoryTypes[type].propertyFlags & VK_MEMORY_PROPERTY_HOST_COHERENT_BIT) != 0;
+        m_readbackSize[slot] = size;
+    }
+
+    VkImage image = m_swapchainImages[m_currentImageIndex];
+    VkImageMemoryBarrier toSrc{};
+    toSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    toSrc.oldLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toSrc.image = image;
+    toSrc.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    toSrc.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    toSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr,
+                         0, nullptr, 1, &toSrc);
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {m_swapchainExtent.width, m_swapchainExtent.height, 1};
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_readbackBuf[slot], 1, &region);
+    VkImageMemoryBarrier toPresent = toSrc;
+    toPresent.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    toPresent.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    toPresent.dstAccessMask = 0;
+    VkBufferMemoryBarrier toHost{};
+    toHost.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    toHost.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    toHost.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    toHost.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toHost.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    toHost.buffer = m_readbackBuf[slot];
+    toHost.size = VK_WHOLE_SIZE;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_HOST_BIT,
+                         0, 0, nullptr, 1, &toHost, 1, &toPresent);
+    return true;
+}
+
+void VulkanRenderer::destroyReadback()
+{
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        if (m_readbackBuf[i] == VK_NULL_HANDLE) continue;
+        vkUnmapMemory(m_device, m_readbackMem[i]);
+        vkDestroyBuffer(m_device, m_readbackBuf[i], nullptr);
+        vkFreeMemory(m_device, m_readbackMem[i], nullptr);
+        m_readbackBuf[i] = VK_NULL_HANDLE;
+        m_readbackMem[i] = VK_NULL_HANDLE;
+        m_readbackPtr[i] = nullptr;
+        m_readbackSize[i] = 0;
+    }
 }
 
 #endif // USE_VULKAN
