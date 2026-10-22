@@ -182,6 +182,7 @@ set(LENSENGINE_SOURCES
     src/MarkerTracker.cpp
     src/HandTrackingProvider.cpp
     src/SceneReconstruction.cpp
+    src/EyeTracker.cpp
 )
 
 set(LENSENGINE_HEADERS
@@ -220,6 +221,7 @@ set(LENSENGINE_HEADERS
     include/MarkerTracker.h
     include/HandTrackingProvider.h
     include/SceneReconstruction.h
+    include/EyeTracker.h
 )
 
 # Создание библиотеки
@@ -328,6 +330,8 @@ if(BUILD_TESTS)
     target_link_libraries(test_tracking_session LensEngineSDK)
     add_executable(test_lidar_odometry tests/test_lidar_odometry.cpp)
     target_link_libraries(test_lidar_odometry LensEngineSDK)
+    add_executable(test_eye_tracker tests/test_eye_tracker.cpp)
+    target_link_libraries(test_eye_tracker LensEngineSDK)
     add_executable(test_world_map tests/test_world_map.cpp)
     target_link_libraries(test_world_map LensEngineSDK)
     add_executable(test_scene_reconstruction tests/test_scene_reconstruction.cpp)

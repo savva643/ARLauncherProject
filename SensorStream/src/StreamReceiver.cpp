@@ -208,6 +208,12 @@ void StreamReceiver::handlePacket(Client& c, uint8_t type, const uint8_t* p, siz
     case PacketType::Depth:
         handleDepth(p, n);
         break;
+    case PacketType::Audio:
+        handleAudio(p, n);
+        break;
+    case PacketType::EyeImage:
+        handleEye(p, n);
+        break;
     case PacketType::LegacyJpeg:
         c.streaming = true;
         handleLegacyJpeg(p, n);
@@ -314,6 +320,34 @@ void StreamReceiver::handleImu(const uint8_t* p, size_t n)
             break;
         }
     }
+}
+
+void StreamReceiver::handleAudio(const uint8_t* p, size_t n)
+{
+    if (n < kAudioHeaderSize || p[13] != kAudioFormatPcm16) return;
+    AudioChunk a;
+    a.tNs = rdI64(p);
+    a.sampleRate = int(rdU32(p + 8));
+    a.channels = std::max(1, int(p[12]));
+    const size_t count = (n - kAudioHeaderSize) / 2;
+    a.samples.resize(count);
+    for (size_t i = 0; i < count; ++i) a.samples[i] = int16_t(rdU16(p + kAudioHeaderSize + 2 * i));
+    m_audioSamplesRx += count / size_t(a.channels);
+    if (m_onAudio) m_onAudio(a);
+}
+
+void StreamReceiver::handleEye(const uint8_t* p, size_t n)
+{
+    if (n < kEyeHeaderSize || p[9] != kEyeFormatGray8) return;
+    EyeImage e;
+    e.tNs = rdI64(p);
+    e.eye = p[8];
+    e.width = rdU16(p + 10);
+    e.height = rdU16(p + 12);
+    if (e.width <= 0 || e.height <= 0 || n < kEyeHeaderSize + size_t(e.width) * e.height) return;
+    e.pixels.assign(p + kEyeHeaderSize, p + kEyeHeaderSize + size_t(e.width) * e.height);
+    ++m_eyeRx;
+    if (m_onEye) m_onEye(e);
 }
 
 void StreamReceiver::handleDepth(const uint8_t* p, size_t n)
@@ -491,6 +525,8 @@ void StreamReceiver::updateStats()
     s.videoFpsReceived = double(vrx) / sec;
     s.videoFpsDecoded = double(vdec) / sec;
     s.imuRateHz = double(imu) / sec;
+    s.audioRateHz = double(m_audioSamplesRx.exchange(0)) / sec;
+    s.eyeFps = double(m_eyeRx.exchange(0)) / sec;
     s.megabitsPerSecond = double(bytes) * 8.0 / 1e6 / sec;
     s.decodeMsAvg = vdec ? double(decNs) / double(vdec) * 1e-6 : 0;
     s.captureToDecodedMsAvg = vdec ? double(latNs) / double(vdec) * 1e-6 : 0;

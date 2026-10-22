@@ -56,12 +56,31 @@ struct DepthFrame {
     std::vector<float> depth;
 };
 
+/// Звук с микрофона (часы телефона/модуля)
+struct AudioChunk {
+    int64_t tNs = 0;
+    int sampleRate = 16000;
+    int channels = 1;
+    std::vector<int16_t> samples;   // чередование каналов
+};
+
+/// Кадр ИК-камеры глаза (модуль айтрекинга)
+struct EyeImage {
+    int64_t tNs = 0;
+    int eye = 0;                    // 0 — левый, 1 — правый
+    int width = 0;
+    int height = 0;
+    std::vector<uint8_t> pixels;    // GRAY8
+};
+
 struct StreamStats {
     bool clientConnected = false;
     bool protocolV2 = false;
     double videoFpsReceived = 0;
     double videoFpsDecoded = 0;
     double imuRateHz = 0;
+    double audioRateHz = 0;         // сэмплов/с микрофона (0 — нет)
+    double eyeFps = 0;              // кадров глаз/с
     double megabitsPerSecond = 0;
     double decodeMsAvg = 0;
     double captureToDecodedMsAvg = 0;   // от экспозиции на телефоне до готового кадра на ПК

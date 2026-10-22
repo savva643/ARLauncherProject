@@ -186,6 +186,20 @@ public:
     void setObjectMaterials(std::vector<ObjectMaterial> materials) { m_materials = std::move(materials); }
     /// Карта окружения equirect RGBA8 (EnvironmentProbe) — только до render pass (latch)
     void uploadEnvironmentMap(const uint8_t* rgba, uint32_t width, uint32_t height, uint64_t version);
+    /// Коррекция линз шлема: сцена рисуется в отдельную картинку, затем раскладывается на экран с
+    /// предыскажением «бочкой» и коррекцией хроматической аберрации (для каждого глаза)
+    struct LensParams {
+        bool enabled = false;
+        float k1 = 0.22f;          // радиальные коэффициенты (Brown): f(r) = 1 + k1 r^2 + k2 r^4
+        float k2 = 0.24f;
+        float chroma = 0.012f;     // разница масштаба красного/синего относительно зелёного
+        float scale = 1.0f;        // общий масштаб (меньше 1 — картинка крупнее, меньше чёрных углов)
+        float centerShift = 0.0f;  // сдвиг центра линзы к носу (доля полуширины глаза), стерео
+        bool stereo = false;
+    };
+    void setLensParams(const LensParams& params);
+    const LensParams& lensParams() const { return m_lens; }
+
     /// Заменить геометрию меша (меш комнаты меняется раз в секунду); старые буферы удаляются, когда GPU их отпустит
     bool updateMesh(uint32_t meshId, const std::vector<float>& vertices, const std::vector<uint32_t>& indices);
 
@@ -274,6 +288,25 @@ private:
     bool m_envReal = false;
     uint64_t m_envVersion = 0;
     VkPipeline m_shadowPipeline = VK_NULL_HANDLE;
+    // Коррекция линз
+    LensParams m_lens;
+    VkRenderPass m_offscreenPass = VK_NULL_HANDLE;
+    VkImage m_offscreenImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_offscreenMemory = VK_NULL_HANDLE;
+    VkImageView m_offscreenView = VK_NULL_HANDLE;
+    VkFramebuffer m_offscreenFramebuffer = VK_NULL_HANDLE;
+    VkSampler m_lensSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_lensSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_lensPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_lensSet = VK_NULL_HANDLE;
+    VkPipelineLayout m_lensPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_lensPipeline = VK_NULL_HANDLE;
+    bool lensActive() const { return m_lens.enabled && m_lensPipeline != VK_NULL_HANDLE && m_offscreenFramebuffer != VK_NULL_HANDLE; }
+    bool createLensPipeline();
+    bool createLensTargets();
+    void destroyLensTargets();
+    void destroyLens();
+    void drawLensPass(VkCommandBuffer cmd);
     uint64_t m_frameNumber = 0;
     uint64_t m_sceneUboFrame = UINT64_MAX;
     bool createSceneResources();

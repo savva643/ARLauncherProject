@@ -13,6 +13,7 @@
 #include "MarkerTracker.h"
 #include "AudioEngine.h"
 #include "HandTrackingProvider.h"
+#include "EyeTracker.h"
 #include "ARLauncherAPI.h"
 #include "FontRenderer.h"
 #include "SensorStream/StreamReceiver.h"
@@ -139,10 +140,10 @@ bool Application::initialize(int argc, char* argv[])
         return false;
     }
 
+    initializeAudio();
     if (!initializeSensorStream()) {
         std::cerr << "Warning: sensor stream not started, continuing without iPhone" << std::endl;
     }
-    initializeAudio();
     initializeSpatial();
 
     m_statsStart = std::chrono::steady_clock::now();
@@ -153,7 +154,8 @@ bool Application::initialize(int argc, char* argv[])
 
     std::cout << "[CONTROLS] R — recenter, M — phone mount (auto/0/90/180/270), K — occlusion, H — shadows, "
                  "E — room lighting/reflections, U — sound on/off, V — room mesh/planes, F5 — save world map, L — LiDAR overlay, "
-                 "P — reprojection, O — prediction, ESC — exit; pinch (thumb+index) — grab and move objects" << std::endl;
+                 "G — eye calibration, F6 — record mic, F7 — mic to headphones, P — reprojection, O — prediction, ESC — exit; "
+                 "pinch (thumb+index) — grab and move objects" << std::endl;
     return true;
 }
 
@@ -308,7 +310,20 @@ bool Application::initializeRenderer()
     }
 
 #ifdef USE_VULKAN
-    static_cast<VulkanRenderer*>(m_renderer.get())->setPreRenderPassCallback([this]() { latchFrame(); });
+    auto* vk = static_cast<VulkanRenderer*>(m_renderer.get());
+    vk->setPreRenderPassCallback([this]() { latchFrame(); });
+    // Коррекция линз шлема: ARL_LENS=1 (+ ARL_LENS_K1/K2/CA/SCALE/SHIFT под конкретные линзы)
+    if (envFlag("ARL_LENS")) {
+        VulkanRenderer::LensParams lens;
+        lens.enabled = true;
+        lens.k1 = float(envDouble("ARL_LENS_K1", lens.k1));
+        lens.k2 = float(envDouble("ARL_LENS_K2", lens.k2));
+        lens.chroma = float(envDouble("ARL_LENS_CA", lens.chroma));
+        lens.scale = float(envDouble("ARL_LENS_SCALE", lens.scale));
+        lens.centerShift = float(envDouble("ARL_LENS_SHIFT", 0.0));
+        lens.stereo = m_stereo;
+        vk->setLensParams(lens);
+    }
 #endif
     return true;
 }
@@ -453,6 +468,16 @@ bool Application::initializeSensorStream()
 
     m_visionRunning = true;
     m_visionThread = std::thread(&Application::visionWorker, this);
+
+    // Модули шлема (по тому же протоколу): ИК-камеры глаз и микрофон
+    m_eyes = std::make_unique<LensEngine::EyeTracker>();
+    if (const char* home = std::getenv("HOME")) {
+        m_eyeCalibPath = std::string(home) + "/.local/share/glaski/eye_calibration.txt";
+        if (m_eyes->loadCalibration(m_eyeCalibPath)) std::cout << "[EYES] calibration loaded" << std::endl;
+    }
+    m_stream->setEyeCallback([this](const sensorstream::EyeImage& e) { handleEyeImage(e); });
+    m_micMonitor = envFlag("ARL_MIC_MONITOR");
+    m_stream->setAudioCallback([this](const sensorstream::AudioChunk& a) { handleMicAudio(a); });
 
     if (!m_stream->start()) {
         return false;
@@ -809,8 +834,19 @@ void Application::updateHud()
         }
         m_poseText->setText(buf);
         if (st.imuActive) {
-            std::snprintf(buf, sizeof(buf), "IMU: %.0f Hz, mount %d° %s, gyro bias %.3f°/s", ss.imuRateHz,
-                          st.mountRollDeg, st.mountAuto ? "auto" : "manual", glm::degrees(glm::length(st.gyroBias)));
+            std::string extra;
+            if (ss.eyeFps > 1.0) {
+                extra += ", eyes " + std::to_string(int(ss.eyeFps / 2)) + " Hz" + (m_eyes && m_eyes->calibrated() ? " (calibrated)" : " (G: calibrate)");
+                if (m_eyeCalib.active) extra += " CALIBRATING " + std::to_string(m_eyeCalib.index + 1) + "/9";
+            }
+            if (ss.audioRateHz > 100.0) {
+                char mic[96];
+                std::snprintf(mic, sizeof(mic), ", mic %.0f dB%s%s", m_micLevelDb.load(), m_micLevelDb.load() > -35.0f ? " (voice)" : "",
+                              m_micRecording ? " REC" : "");
+                extra += mic;
+            }
+            std::snprintf(buf, sizeof(buf), "IMU: %.0f Hz, mount %d° %s, gyro bias %.3f°/s%s", ss.imuRateHz,
+                          st.mountRollDeg, st.mountAuto ? "auto" : "manual", glm::degrees(glm::length(st.gyroBias)), extra.c_str());
         } else {
             std::snprintf(buf, sizeof(buf), "IMU: No data");
         }
@@ -920,8 +956,19 @@ void Application::render()
         transforms = m_scene->getObjectTransforms();
         meshIds = m_scene->getVisibleMeshIds();
         std::vector<VulkanRenderer::ObjectMaterial> materials;
+        const SceneObject* hovered = (m_hoverObject >= 0 && size_t(m_hoverObject) < m_scene->objects().size())
+                                         ? &m_scene->objects()[size_t(m_hoverObject)] : nullptr;
         for (const SceneObject* obj : m_scene->getVisibleObjects()) {
-            materials.push_back({obj->color, obj->metallic, obj->roughness});
+            VulkanRenderer::ObjectMaterial m;
+            m.color = obj->color;
+            m.metallic = obj->metallic;
+            m.roughness = obj->roughness;
+            // Под взглядом/лучом объект чуть светлее, взятый — теплее (как подсветка в visionOS)
+            if (obj == hovered) {
+                m.color = glm::vec4(glm::mix(glm::vec3(obj->color), m_grab.active ? glm::vec3(1.0f, 0.8f, 0.4f) : glm::vec3(1.0f), 0.3f),
+                                    obj->color.a);
+            }
+            materials.push_back(m);
         }
         // Якоря меток: кубик 6 см стоит на каждой метке, которую видели (остаётся на месте вне кадра)
         if (m_markers && m_scene->cubeMeshId() != 0) {
@@ -1072,6 +1119,17 @@ void Application::onKeyPress(GLFWwindow* window, int key, int scancode, int acti
         if (app->m_tracking) app->m_tracking->setMount(app->m_mountSetting);
         std::cout << "[TRACKING] phone mount: " << (app->m_mountSetting < 0 ? std::string("auto") : std::to_string(app->m_mountSetting))
                   << std::endl;
+        break;
+    case GLFW_KEY_G:
+        app->startEyeCalibration();
+        break;
+    case GLFW_KEY_F6:
+        app->toggleMicRecording();
+        break;
+    case GLFW_KEY_F7:
+        app->m_micMonitor = !app->m_micMonitor;
+        if (app->m_audio) app->m_audio->setStreamEnabled(app->m_micMonitor);
+        std::cout << "[MIC] monitor in headphones " << (app->m_micMonitor ? "ON" : "OFF") << std::endl;
         break;
     case GLFW_KEY_V:
         app->m_showRoom = !app->m_showRoom;

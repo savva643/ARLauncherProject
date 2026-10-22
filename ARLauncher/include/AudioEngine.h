@@ -5,6 +5,8 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <cstdio>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -37,6 +39,11 @@ public:
     void setMuted(bool muted);
     bool muted() const { return m_muted; }
 
+    /// Поток без пространства (микрофон в наушники): сэмплы моно PCM16; задержка ограничена ~120 мс
+    void queueStream(const int16_t* samples, size_t count, int sampleRate);
+    void setStreamEnabled(bool enabled);
+    bool streamEnabled() const { return m_streamEnabled; }
+
     /// Голова: позиция и R_world_from_eye (оси глаза: x вправо, y вверх, взгляд -z)
     void setListener(const glm::vec3& position, const glm::quat& orientation);
 
@@ -59,6 +66,27 @@ private:
     void* m_device = nullptr;
     void* m_context = nullptr;
     std::vector<Source> m_sources;
+    std::mutex m_streamMutex;
+    bool m_streamEnabled = false;
+    unsigned int m_streamSource = 0;
+    std::vector<unsigned int> m_streamFree;
+};
+
+/// Запись WAV (моно PCM16) — для микрофона
+class WavWriter {
+public:
+    ~WavWriter() { close(); }
+    bool open(const std::string& path, int sampleRate);
+    void write(const int16_t* samples, size_t count);
+    void close();
+    bool isOpen() const { return m_file != nullptr; }
+    const std::string& path() const { return m_path; }
+
+private:
+    std::FILE* m_file = nullptr;
+    std::string m_path;
+    uint32_t m_samples = 0;
+    int m_rate = 16000;
 };
 
 #endif // AUDIOENGINE_H

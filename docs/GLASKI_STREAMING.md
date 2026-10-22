@@ -72,6 +72,11 @@ cd ARLauncher/build_vk
 | `ARL_OCCLUSION=0` / `ARL_SHADOWS=0` / `ARL_LIGHTING=0` | выключить окклюзию / тени / свет и отражения комнаты |
 | `ARL_AUDIO=0`, `ARL_HRTF=0` | выключить звук / HRTF |
 | `ARL_MARKERS=0`, `ARL_MARKER_SIZE_CM=10` | метки ArUco и их размер |
+| `ARL_HANDS=0` | выключить руки (модели — `models/`, путь можно задать `ARL_MODELS`) |
+| `ARL_SHOW_ROOM=1` | сразу показывать меш комнаты и плоскости (то же, что V) |
+| `ARL_WORLD_MAP=путь` / `ARL_WORLD_MAP=0` | файл карты комнаты (по умолчанию `~/.local/share/glaski/world.map`) / не сохранять |
+| `ARL_LENS=1`, `ARL_LENS_K1/K2/CA/SCALE/SHIFT` | коррекция линз шлема и её параметры |
+| `ARL_MIC_MONITOR=1` | микрофон сразу в наушники (то же, что F7) |
 | `ARL_LIDAR_OVERLAY=1` | включить наложение LiDAR сразу (то же, что L) |
 | `ARL_NO_VIO=1` | отключить OpenVINS |
 | `ARL_GPU=<n>` | выбрать видеокарту |
@@ -89,6 +94,12 @@ cd ARLauncher/build_vk
 | **H** | тени на полу |
 | **E** | свет и отражения комнаты |
 | **U** | звук вкл/выкл |
+| **V** | меш комнаты (пол, стены, стол, потолок цветом) и плоскости |
+| **F5** | сохранить карту комнаты (при выходе сохраняется сама, плюс раз в минуту) |
+| **G** | калибровка взгляда (9 точек; нужны камеры глаз) |
+| **F6** | запись микрофона в `~/glaski_recordings/*.wav` (ещё раз — стоп) |
+| **F7** | микрофон в наушники |
+| **щипок** | большой + указательный: взять объект под взглядом/лучом руки, перенести, отпустить — он запомнится в комнате |
 | **L** | наложение LiDAR цветом поверх видео (красный — близко, синий — далеко); проверка, что глубина приходит и совпадает с картинкой |
 | **ESC** | выход |
 
@@ -126,6 +137,12 @@ cd ARLauncher/build_vk
 ARL_MARKER_SIZE_CM=30 ./bin/ARLauncher &
 ./SensorStream/stream_simulator 127.0.0.1 9001 --room --depth --fps 30 --size 960x720
 ```
+
+`--eyes` — синтетические ИК-кадры глаз (модуль айтрекинга), `--audio` — микрофон.
+
+Модели рук: `models/palm_detection_mediapipe_2023feb.onnx`, `models/handpose_estimation_mediapipe_2023feb.onnx`.
+Для OpenCV 4.5/4.6 (Ubuntu 22.04/24.04) рядом лежит `*_compat.onnx` (сделан `tools/onnx_clip_compat.py`) —
+подхватывается сам.
 
 Проверка только приёма: `./SensorStream/stream_probe --seconds 10 --dump frame.pgm`.
 

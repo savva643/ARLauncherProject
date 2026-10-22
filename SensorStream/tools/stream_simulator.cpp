@@ -6,6 +6,10 @@
 // репроекция в лаунчере держит мир на месте несмотря на задержку видео.
 //
 //   stream_simulator [host] [port] [--seconds N] [--latency-ms 45] [--size 1280x960] [--fps 60] [--hevc] [--depth] [--room]
+//                    [--eyes] [--audio]
+//
+// --eyes: модуль айтрекинга — ИК-кадры обоих глаз 60 Гц (пакет EYE), взгляд ходит по восьмёрке ±15°.
+// --audio: микрофон — 16 кГц PCM16 (пакет AUDIO), «речь»: слоги на 140 Гц с формантами.
 //
 // --room: вместо сферы-сетки — комната 5x6 м с перегородкой, столом и шкафом; «голова» ходит по комнате
 // (позиция меняется), LiDAR согласован с видео. Так проверяются позиция по LiDAR, окклюзия и тени.
@@ -213,6 +217,29 @@ double roomPos(double t, int axis)
     return 1.55 + 0.02 * std::sin(2 * kPi * 0.5 * t);
 }
 
+// ИК-кадр глаза (как в тесте EyeTracker): веки, радужка, зрачок, блики диодов, шум
+void renderEye(std::vector<uint8_t>& img, int w, int h, double yawDeg, double pitchDeg, int eye, std::mt19937& rng)
+{
+    std::normal_distribution<float> noise(0.0f, 4.0f);
+    img.resize(size_t(w) * h);
+    const double R = 0.33 * w, yaw = yawDeg * kPi / 180.0, pitch = pitchDeg * kPi / 180.0;
+    const double ex = 0.5 * w + (eye ? 3.0 : -3.0), ey = 0.52 * h;
+    const double px = ex - R * std::sin(yaw) * std::cos(pitch), py = ey - R * std::sin(pitch) * 0.9;
+    const double iris = 0.12 * w, pupil = 0.048 * w;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x) {
+            const double dx = (x - ex) / (0.42 * w), dy = (y - ey) / (0.30 * h);
+            const bool open = dx * dx + dy * dy < 1.0;
+            double v = open ? 205.0 : 125.0;
+            const double r = std::hypot(x - px, (y - py) * 1.05);
+            if (open && r < iris) v = 85.0;
+            if (r < pupil) v = 18.0;
+            for (double gx : {-0.03 * w, 0.03 * w})
+                if (std::hypot(x - (ex + gx + (px - ex) * 0.5), y - (ey + 0.02 * h + (py - ey) * 0.5)) < 2.2) v = 250.0;
+            img[size_t(y) * w + x] = uint8_t(std::clamp(v + noise(rng), 0.0, 255.0));
+        }
+}
+
 int64_t phoneNow() { return pcNowNs() + kPhoneClockOffsetNs; }
 
 class Sender {
@@ -273,6 +300,8 @@ int main(int argc, char** argv)
     bool hevc = false;
     bool depth = false;
     bool room = false;
+    bool eyes = false;
+    bool audio = false;
 
     int positional = 0;
     for (int i = 1; i < argc; ++i) {
@@ -283,6 +312,8 @@ int main(int argc, char** argv)
         else if (a == "--hevc") hevc = true;
         else if (a == "--depth") depth = true;
         else if (a == "--room") room = g_room = true;
+        else if (a == "--eyes") eyes = true;
+        else if (a == "--audio") audio = true;
         else if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%dx%d", &width, &height);
         else if (positional == 0) { host = a; ++positional; }
         else if (positional == 1) { port = uint16_t(std::stoi(a)); ++positional; }
@@ -492,6 +523,66 @@ int main(int argc, char** argv)
         }
     });
 
+    // --- модуль айтрекинга: 60 Гц, оба глаза
+    std::thread eyeThread([&] {
+        if (!eyes) return;
+        std::mt19937 erng(17);
+        const int ew = 160, eh = 120;
+        std::vector<uint8_t> img;
+        int64_t next = start;
+        while (ok && pcNowNs() < endNs) {
+            const double t = double(next - start) * 1e-9;
+            const double yaw = 15.0 * std::sin(2 * kPi * 0.25 * t), pitch = 8.0 * std::sin(2 * kPi * 0.5 * t);
+            for (int eye = 0; eye < 2; ++eye) {
+                renderEye(img, ew, eh, yaw, pitch, eye, erng);
+                std::vector<uint8_t> p(kEyeHeaderSize + img.size(), 0);
+                wrI64(p.data(), next + kPhoneClockOffsetNs);
+                p[8] = uint8_t(eye);
+                p[9] = kEyeFormatGray8;
+                wrU16(p.data() + 10, ew);
+                wrU16(p.data() + 12, eh);
+                std::memcpy(p.data() + kEyeHeaderSize, img.data(), img.size());
+                if (!net.send(PacketType::EyeImage, p)) { ok = false; break; }
+            }
+            next += 16'666'667;
+            const int64_t sleepNs = next - pcNowNs();
+            if (sleepNs > 0) std::this_thread::sleep_for(std::chrono::nanoseconds(sleepNs));
+        }
+    });
+
+    // --- микрофон: 16 кГц, пачки по 20 мс
+    std::thread audioThread([&] {
+        if (!audio) return;
+        const int rate = 16000, chunk = 320;
+        int64_t next = start;
+        uint64_t n = 0;
+        while (ok && pcNowNs() < endNs) {
+            std::vector<uint8_t> p(kAudioHeaderSize + chunk * 2, 0);
+            wrI64(p.data(), next + kPhoneClockOffsetNs);
+            wrU32(p.data() + 8, rate);
+            p[12] = 1;
+            p[13] = kAudioFormatPcm16;
+            for (int i = 0; i < chunk; ++i, ++n) {
+                const double t = double(n) / rate;
+                // слоги 4 в секунду, паузы между фразами
+                const double syll = std::max(0.0, std::sin(2 * kPi * 4.0 * t));
+                const double phrase = std::fmod(t, 3.0) < 2.0 ? 1.0 : 0.0;
+                double v = 0.0;
+                for (int k = 1; k <= 12; ++k) {
+                    const double f = 140.0 * k;
+                    const double formant = std::exp(-std::pow((f - 700.0) / 250.0, 2)) + 0.6 * std::exp(-std::pow((f - 1200.0) / 300.0, 2));
+                    v += formant * std::sin(2 * kPi * f * t);
+                }
+                const int16_t s16 = int16_t(std::clamp(v * syll * phrase * 6000.0, -32767.0, 32767.0));
+                wrU16(p.data() + kAudioHeaderSize + 2 * i, uint16_t(s16));
+            }
+            if (!net.send(PacketType::Audio, p)) { ok = false; break; }
+            next += 20'000'000;
+            const int64_t sleepNs = next - pcNowNs();
+            if (sleepNs > 0) std::this_thread::sleep_for(std::chrono::nanoseconds(sleepNs));
+        }
+    });
+
     const int64_t framePeriod = 1'000'000'000LL / fps;
     int64_t nextFrame = start;
     std::deque<PendingVideo> videoQueue;
@@ -559,6 +650,8 @@ int main(int argc, char** argv)
     ok = false;
     imuThread.join();
     depthThread.join();
+    eyeThread.join();
+    audioThread.join();
 
     std::cout << "done, frames " << frames << std::endl;
     av_packet_free(&pkt);

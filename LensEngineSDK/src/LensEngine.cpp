@@ -57,11 +57,8 @@ bool LensEngineCore::initialize()
     m_dataProcessor->setKalmanFilter(m_kalmanFilter.get());
     
 #ifdef LENSENGINE_USE_OPENCV
-    // Инициализация HandTracker с путями к ONNX моделям
-    std::string palmModelPath = "/home/savva/Documents/ARLauncherProject/models/palm_detection_mediapipe_2023feb.onnx";
-    std::string handposeModelPath = "/home/savva/Documents/ARLauncherProject/models/handpose_estimation_mediapipe_2023feb.onnx";
-    std::cout << "[LE] handTracker init..." << std::endl;
-    m_handTracker->initialize(palmModelPath, handposeModelPath);
+    // LEGACY HandTracker не загружается: руки теперь в HandTrackingProvider (правильный разбор MediaPipe,
+    // 3D по LiDAR, жесты), модели ищутся в models/ проекта.
     
     // Инициализация SceneUnderstanding
     std::cout << "[LE] sceneUnderstanding init..." << std::endl;

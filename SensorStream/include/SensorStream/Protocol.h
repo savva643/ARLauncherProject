@@ -16,6 +16,8 @@ enum class PacketType : uint8_t {
     Video = 0x21,
     Imu = 0x22,
     Depth = 0x23,
+    Audio = 0x24,    // микрофон: PCM16
+    EyeImage = 0x25, // ИК-камера глаза (модуль айтрекинга шлема): GRAY8
     // legacy (старый ARStreamer)
     LegacyJpeg = 0x01,
     LegacyLidarDepth = 0x02,
@@ -45,6 +47,12 @@ constexpr uint8_t kVideoFlagBT709 = 1u << 3;       // матрица BT.709 (и�
 constexpr size_t kImuHeaderSize = 16;
 constexpr size_t kImuRecordSize = 24;
 constexpr size_t kDepthHeaderSize = 32;
+// AUDIO: [tNs i64 — первый сэмпл][sampleRate u32][channels u8][format u8 = 1 (PCM16 LE)][reserved u16] + сэмплы
+constexpr size_t kAudioHeaderSize = 16;
+constexpr uint8_t kAudioFormatPcm16 = 1;
+// EYE: [tNs i64][eye u8: 0 левый, 1 правый][format u8 = 1 (GRAY8)][width u16][height u16][reserved u16] + пиксели
+constexpr size_t kEyeHeaderSize = 16;
+constexpr uint8_t kEyeFormatGray8 = 1;
 constexpr uint32_t kMaxPayloadSize = 64u * 1024u * 1024u;
 
 // --- little-endian readers (x86/ARM хосты little-endian, но не полагаемся на выравнивание)

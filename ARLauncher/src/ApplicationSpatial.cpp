@@ -2,6 +2,8 @@
 #include "Application.h"
 #include "Renderer.h"
 #include "Scene.h"
+#include "AudioEngine.h"
+#include "EyeTracker.h"
 #include "HandTrackingProvider.h"
 #include "TrackingSession.h"
 #include "SensorStream/StreamReceiver.h"
@@ -10,6 +12,9 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <ctime>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
@@ -85,6 +90,7 @@ void Application::initializeSpatial()
         static_cast<VulkanRenderer*>(m_renderer.get())->updateMesh(id, {}, {});
     }
 
+    if (m_micMonitor && m_audio) m_audio->setStreamEnabled(true);
     m_worldMapPath = defaultWorldMapPath();
     if (!m_worldMapPath.empty() && m_tracking && std::filesystem::exists(m_worldMapPath)) {
         m_tracking->loadWorldMap(m_worldMapPath);
@@ -93,6 +99,11 @@ void Application::initializeSpatial()
 
 void Application::shutdownSpatial()
 {
+    {
+        std::lock_guard<std::mutex> lock(m_micMutex);
+        m_micWav.reset();
+        m_micRecording = false;
+    }
     if (m_saveThread.joinable()) m_saveThread.join();
     if (m_tracking && !m_worldMapPath.empty()) {
         m_tracking->saveWorldMap(m_worldMapPath);
@@ -152,8 +163,120 @@ void Application::updateSpatial()
         m_saveThread = std::thread([this] { m_tracking->saveWorldMap(m_worldMapPath); });
     }
 
+    updateEyeCalibration();
     updateRoomMesh();
     updateInteraction();
+}
+
+// ---------------- Айтрекинг ----------------
+
+const glm::vec2* Application::eyeCalibrationTargets(int& count)
+{
+    // 9 точек: центр, затем по кругу (рысканье, тангаж в градусах)
+    static const glm::vec2 targets[9] = {{0, 0}, {-18, 12}, {0, 12}, {18, 12}, {18, 0}, {18, -12}, {0, -12}, {-18, -12}, {-18, 0}};
+    count = 9;
+    return targets;
+}
+
+void Application::handleEyeImage(const sensorstream::EyeImage& e)
+{
+    if (!m_eyes) return;
+    m_eyes->addImage(e.eye, e.tNs, e.pixels.data(), e.width, e.height, e.width);
+    m_eyePcNs = sensorstream::pcNowNs();
+}
+
+void Application::startEyeCalibration()
+{
+    if (!m_eyes || sensorstream::pcNowNs() - m_eyePcNs.load() > 500'000'000LL) {
+        std::cout << "[EYES] no eye cameras (EYE packets) — calibration needs the eye-tracking module" << std::endl;
+        return;
+    }
+    m_eyes->startCalibration();
+    m_eyeCalib.active = true;
+    m_eyeCalib.index = 0;
+    m_eyeCalib.start = std::chrono::steady_clock::now();
+    std::cout << "[EYES] calibration: look at the red dot (9 points)" << std::endl;
+}
+
+void Application::updateEyeCalibration()
+{
+    if (!m_eyeCalib.active || !m_eyes) return;
+    int count = 0;
+    const glm::vec2* targets = eyeCalibrationTargets(count);
+    const float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - m_eyeCalib.start).count();
+    // первые 0.6 с глаз переводится на точку, дальше 1 с — замеры
+    if (t > 0.6f && t < 1.6f) m_eyes->addCalibrationSample(targets[m_eyeCalib.index]);
+    if (t >= 1.6f) {
+        if (++m_eyeCalib.index >= count) {
+            m_eyeCalib.active = false;
+            if (m_eyes->finishCalibration()) {
+                if (!m_eyeCalibPath.empty()) m_eyes->saveCalibration(m_eyeCalibPath);
+                std::cout << "[EYES] calibration done" << std::endl;
+            } else {
+                std::cout << "[EYES] calibration failed (pupils not visible)" << std::endl;
+            }
+            return;
+        }
+        m_eyeCalib.start = std::chrono::steady_clock::now();
+    }
+}
+
+// ---------------- Микрофон ----------------
+
+void Application::handleMicAudio(const sensorstream::AudioChunk& a)
+{
+    if (a.samples.empty()) return;
+    // моно (если пришло стерео — левый канал)
+    std::vector<int16_t> mono;
+    const int16_t* data = a.samples.data();
+    size_t count = a.samples.size();
+    if (a.channels > 1) {
+        mono.resize(a.samples.size() / size_t(a.channels));
+        for (size_t i = 0; i < mono.size(); ++i) mono[i] = a.samples[i * size_t(a.channels)];
+        data = mono.data();
+        count = mono.size();
+    }
+    double sum = 0.0;
+    for (size_t i = 0; i < count; ++i) sum += double(data[i]) * data[i];
+    const float db = float(10.0 * std::log10(sum / double(count) / (32768.0 * 32768.0) + 1e-12));
+    m_micLevelDb = m_micLevelDb.load() + (std::max(db, -90.0f) - m_micLevelDb.load()) * 0.3f;
+    m_micPcNs = sensorstream::pcNowNs();
+    m_micRate = a.sampleRate;
+    {
+        std::lock_guard<std::mutex> lock(m_micMutex);
+        if (m_micWav) m_micWav->write(data, count);
+    }
+    if (m_micMonitor && m_audio) m_audio->queueStream(data, count, a.sampleRate);
+}
+
+void Application::toggleMicRecording()
+{
+    std::lock_guard<std::mutex> lock(m_micMutex);
+    if (m_micWav) {
+        std::cout << "[MIC] saved " << m_micWav->path() << std::endl;
+        m_micWav.reset();
+        m_micRecording = false;
+        return;
+    }
+    if (m_micRate.load() <= 0) {
+        std::cout << "[MIC] no microphone stream (AUDIO packets)" << std::endl;
+        return;
+    }
+    const char* home = std::getenv("HOME");
+    const std::string dir = std::string(home ? home : ".") + "/glaski_recordings";
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    char name[64];
+    const std::time_t now = std::time(nullptr);
+    std::strftime(name, sizeof(name), "/mic_%Y%m%d_%H%M%S.wav", std::localtime(&now));
+    auto wav = std::make_unique<WavWriter>();
+    if (!wav->open(dir + name, m_micRate.load())) {
+        std::cout << "[MIC] cannot write " << dir + name << std::endl;
+        return;
+    }
+    std::cout << "[MIC] recording to " << wav->path() << " (F6 to stop)" << std::endl;
+    m_micWav = std::move(wav);
+    m_micRecording = true;
 }
 
 void Application::updateRoomMesh()
@@ -204,6 +327,16 @@ void Application::updateInteraction()
     // Луч выбора: взгляд (если есть айтрекер) -> иначе рука, которая указывает -> иначе центр поля зрения
     const glm::mat4 worldFromEye = glm::inverse(m_viewMatrix[0]);
     const glm::vec3 head(worldFromEye[3]);
+    m_gazeFromEyes = false;
+    if (m_eyes && sensorstream::pcNowNs() - m_eyePcNs.load() < 200'000'000LL && !m_eyeCalib.active) {
+        const auto g = m_eyes->gaze();
+        if (g.valid) {
+            m_gazeFromEyes = true;
+            m_gazeValid = true;
+            m_gazeOrigin = head;
+            m_gazeDirection = glm::normalize(glm::mat3(worldFromEye) * g.direction);
+        }
+    }
     glm::vec3 rayO = head, rayD = glm::normalize(glm::vec3(worldFromEye * glm::vec4(0, 0, -1, 0)));
     if (m_gazeValid && m_gazeFromEyes) {
         rayO = m_gazeOrigin;
@@ -287,14 +420,6 @@ void Application::appendSpatialDraws(std::vector<glm::mat4>& transforms, std::ve
         params.push_back(glm::vec4(metallic, rough, bias, shadow ? 1.0f : 0.0f));
     };
 
-    // Подсветка объекта под лучом/взглядом
-    if (m_hoverObject >= 0 && size_t(m_hoverObject) < m_scene->objects().size()) {
-        const SceneObject& o = m_scene->objects()[size_t(m_hoverObject)];
-        const float r = std::max({o.scale.x, o.scale.y, o.scale.z}) * 1.25f;
-        add(glm::translate(glm::mat4(1.0f), o.position) * glm::scale(glm::mat4(1.0f), glm::vec3(r)), m_scene->sphereMeshId(),
-            m_grab.active ? glm::vec4(1.0f, 0.7f, 0.2f, 0.25f) : glm::vec4(1.0f, 1.0f, 1.0f, 0.15f), 0.0f, 1.0f, 0.0f, false);
-    }
-
     // Руки: суставы (кончики крупнее), луч указания
     if (m_handsProvider && sensorstream::pcNowNs() - m_handsPcNs.load() < 400'000'000LL) {
         for (const auto& h : m_handsProvider->hands()) {
@@ -321,6 +446,20 @@ void Application::appendSpatialDraws(std::vector<glm::mat4>& transforms, std::ve
         const glm::vec3 p = m_gazeOrigin + m_gazeDirection * 2.0f;
         add(glm::translate(glm::mat4(1.0f), p) * glm::scale(glm::mat4(1.0f), glm::vec3(0.02f)), m_scene->sphereMeshId(),
             glm::vec4(1.0f, 1.0f, 1.0f, 0.6f), 0.0f, 1.0f, 0.0f, false);
+    }
+
+    // Калибровка взгляда: точка перед глазами (привязана к голове), смотреть на неё
+    if (m_eyeCalib.active) {
+        int count = 0;
+        const glm::vec2* targets = eyeCalibrationTargets(count);
+        const glm::vec2 a = glm::radians(targets[m_eyeCalib.index]);
+        const glm::vec3 dirHead(std::sin(a.x) * std::cos(a.y), std::sin(a.y), -std::cos(a.x) * std::cos(a.y));
+        const glm::mat4 worldFromEye = glm::inverse(m_viewMatrix[0]);
+        const glm::vec3 p = glm::vec3(worldFromEye[3]) + glm::mat3(worldFromEye) * dirHead * 1.5f;
+        const float t = std::chrono::duration<float>(std::chrono::steady_clock::now() - m_eyeCalib.start).count();
+        const float size = 0.05f - 0.02f * std::min(1.0f, t / 0.6f);   // сжимается — «смотри сюда»
+        add(glm::translate(glm::mat4(1.0f), p) * glm::scale(glm::mat4(1.0f), glm::vec3(size)), m_scene->sphereMeshId(),
+            glm::vec4(1.0f, 0.3f, 0.2f, 1.0f), 0.0f, 0.5f, 10.0f, false);
     }
 
     // Меш комнаты и плоскости (V)

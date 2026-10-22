@@ -31,6 +31,8 @@ public:
     using MagCallback = std::function<void(const MagSample&)>;
     using DepthCallback = std::function<void(const DepthFrame&)>;
     using VideoCallback = std::function<void(const VideoFramePtr&)>;
+    using AudioCallback = std::function<void(const AudioChunk&)>;
+    using EyeCallback = std::function<void(const EyeImage&)>;
 
     StreamReceiver();
     ~StreamReceiver();
@@ -47,6 +49,8 @@ public:
     void setMagCallback(MagCallback cb) { m_onMag = std::move(cb); }
     void setDepthCallback(DepthCallback cb) { m_onDepth = std::move(cb); }
     void setVideoCallback(VideoCallback cb) { m_onVideo = std::move(cb); }
+    void setAudioCallback(AudioCallback cb) { m_onAudio = std::move(cb); }
+    void setEyeCallback(EyeCallback cb) { m_onEye = std::move(cb); }
 
     /// Последний декодированный кадр (nullptr если ещё нет). Потокобезопасно, без копирования пикселей.
     VideoFramePtr latestVideoFrame() const;
@@ -83,6 +87,8 @@ private:
     void handleHello(const uint8_t* p, size_t n);
     void handleVideo(const uint8_t* p, size_t n);
     void handleImu(const uint8_t* p, size_t n);
+    void handleAudio(const uint8_t* p, size_t n);
+    void handleEye(const uint8_t* p, size_t n);
     void handleDepth(const uint8_t* p, size_t n);
     void handleLegacyJpeg(const uint8_t* p, size_t n);
     void handleLegacyImu(const uint8_t* p, size_t n);
@@ -103,6 +109,8 @@ private:
     MagCallback m_onMag;
     DepthCallback m_onDepth;
     VideoCallback m_onVideo;
+    AudioCallback m_onAudio;
+    EyeCallback m_onEye;
 
     ClockSync m_clock;
 
@@ -128,6 +136,8 @@ private:
     std::atomic<uint64_t> m_videoRx{0};
     std::atomic<uint64_t> m_videoDecoded{0};
     std::atomic<uint64_t> m_imuRx{0};
+    std::atomic<uint64_t> m_audioSamplesRx{0};
+    std::atomic<uint64_t> m_eyeRx{0};
     std::atomic<uint64_t> m_droppedDecoder{0};
     std::atomic<int64_t> m_decodeNsSum{0};
     std::atomic<int64_t> m_latencyNsSum{0};

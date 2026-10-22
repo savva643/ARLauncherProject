@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 
 #ifdef USE_OPENAL
@@ -68,6 +69,7 @@ void AudioEngine::shutdown()
 {
 #ifdef USE_OPENAL
     if (!m_active) return;
+    setStreamEnabled(false);
     for (auto& s : m_sources) {
         alSourceStop(s.source);
         alDeleteSources(1, &s.source);
@@ -152,6 +154,64 @@ void AudioEngine::setMuted(bool muted)
 #endif
 }
 
+void AudioEngine::setStreamEnabled(bool enabled)
+{
+#ifdef USE_OPENAL
+    std::lock_guard<std::mutex> lock(m_streamMutex);
+    if (!m_active || enabled == m_streamEnabled) return;
+    if (enabled) {
+        alGenSources(1, &m_streamSource);
+        alSourcei(m_streamSource, AL_SOURCE_RELATIVE, AL_TRUE);   // в голове, без пространства
+        alSource3f(m_streamSource, AL_POSITION, 0.0f, 0.0f, 0.0f);
+        alSourcef(m_streamSource, AL_ROLLOFF_FACTOR, 0.0f);
+        m_streamFree.resize(8);
+        alGenBuffers(8, m_streamFree.data());
+    } else {
+        alSourceStop(m_streamSource);
+        ALint queued = 0;
+        alGetSourcei(m_streamSource, AL_BUFFERS_QUEUED, &queued);
+        while (queued-- > 0) {
+            ALuint b = 0;
+            alSourceUnqueueBuffers(m_streamSource, 1, &b);
+            m_streamFree.push_back(b);
+        }
+        alDeleteSources(1, &m_streamSource);
+        alDeleteBuffers(ALsizei(m_streamFree.size()), m_streamFree.data());
+        m_streamFree.clear();
+        m_streamSource = 0;
+    }
+    m_streamEnabled = enabled;
+#else
+    (void)enabled;
+#endif
+}
+
+void AudioEngine::queueStream(const int16_t* samples, size_t count, int sampleRate)
+{
+#ifdef USE_OPENAL
+    std::lock_guard<std::mutex> lock(m_streamMutex);
+    if (!m_active || !m_streamEnabled || !samples || count == 0) return;
+    ALint processed = 0;
+    alGetSourcei(m_streamSource, AL_BUFFERS_PROCESSED, &processed);
+    while (processed-- > 0) {
+        ALuint b = 0;
+        alSourceUnqueueBuffers(m_streamSource, 1, &b);
+        m_streamFree.push_back(b);
+    }
+    if (m_streamFree.empty()) return;   // отстаём — выбрасываем пачку, задержка не копится
+    const ALuint b = m_streamFree.back();
+    m_streamFree.pop_back();
+    alBufferData(b, AL_FORMAT_MONO16, samples, ALsizei(count * sizeof(int16_t)), sampleRate);
+    alSourceQueueBuffers(m_streamSource, 1, &b);
+    ALint state = 0, queued = 0;
+    alGetSourcei(m_streamSource, AL_SOURCE_STATE, &state);
+    alGetSourcei(m_streamSource, AL_BUFFERS_QUEUED, &queued);
+    if (state != AL_PLAYING && queued >= 2) alSourcePlay(m_streamSource);
+#else
+    (void)samples; (void)count; (void)sampleRate;
+#endif
+}
+
 void AudioEngine::setListener(const glm::vec3& position, const glm::quat& orientation)
 {
 #ifdef USE_OPENAL
@@ -196,4 +256,48 @@ std::vector<int16_t> AudioEngine::makeChime(int sampleRate, float periodSeconds)
         out[i] = int16_t(std::clamp(v * attack, -1.0f, 1.0f) * 24000.0f);
     }
     return out;
+}
+
+bool WavWriter::open(const std::string& path, int sampleRate)
+{
+    close();
+    m_file = std::fopen(path.c_str(), "wb");
+    if (!m_file) return false;
+    m_path = path;
+    m_rate = sampleRate;
+    m_samples = 0;
+    uint8_t header[44] = {};
+    std::fwrite(header, 1, sizeof(header), m_file);   // заполняется при закрытии
+    return true;
+}
+
+void WavWriter::write(const int16_t* samples, size_t count)
+{
+    if (!m_file) return;
+    std::fwrite(samples, sizeof(int16_t), count, m_file);
+    m_samples += uint32_t(count);
+}
+
+void WavWriter::close()
+{
+    if (!m_file) return;
+    auto u32 = [](uint8_t* p, uint32_t v) { for (int i = 0; i < 4; ++i) p[i] = uint8_t(v >> (8 * i)); };
+    auto u16 = [](uint8_t* p, uint16_t v) { p[0] = uint8_t(v); p[1] = uint8_t(v >> 8); };
+    uint8_t h[44];
+    std::memcpy(h, "RIFF", 4);
+    u32(h + 4, 36 + m_samples * 2);
+    std::memcpy(h + 8, "WAVEfmt ", 8);
+    u32(h + 16, 16);
+    u16(h + 20, 1);
+    u16(h + 22, 1);
+    u32(h + 24, uint32_t(m_rate));
+    u32(h + 28, uint32_t(m_rate) * 2);
+    u16(h + 32, 2);
+    u16(h + 34, 16);
+    std::memcpy(h + 36, "data", 4);
+    u32(h + 40, m_samples * 2);
+    std::fseek(m_file, 0, SEEK_SET);
+    std::fwrite(h, 1, sizeof(h), m_file);
+    std::fclose(m_file);
+    m_file = nullptr;
 }

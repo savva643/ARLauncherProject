@@ -67,6 +67,24 @@ RUN_SECTIONS = [
         ("ARL_MARKERS", "Метки ArUco (4x4)", "bool", True, ""),
         ("ARL_MARKER_SIZE_CM", "Размер метки, см", "float", 10.0, "сторона чёрного квадрата"),
     ]),
+    ("Руки и пространство", [
+        ("ARL_HANDS", "Руки (щипок — взять объект)", "bool", True, "модели в models/"),
+        ("ARL_SHOW_ROOM", "Показать меш комнаты и плоскости", "bool", False, "клавиша V"),
+        ("ARL_WORLD_MAP_ON", "Запоминать комнату и объекты", "bool", True, "~/.local/share/glaski/world.map, F5"),
+    ]),
+    ("Линзы шлема", [
+        ("ARL_LENS", "Коррекция линз", "bool", False, "бочка + хроматическая аберрация"),
+        ("ARL_LENS_K1", "k1", "float", 0.22, ""),
+        ("ARL_LENS_K2", "k2", "float", 0.24, ""),
+        ("ARL_LENS_CA", "Хроматическая аберрация", "float", 0.012, "R/B относительно G"),
+        ("ARL_LENS_SCALE", "Масштаб", "float", 1.0, "<1 — меньше чёрных углов"),
+        ("ARL_LENS_SHIFT", "Сдвиг центра к носу", "float", 0.0, "доля полуширины глаза"),
+    ]),
+    ("Модули шлема", [
+        ("ARL_MIC_MONITOR", "Микрофон в наушники", "bool", False, "F7; F6 — запись WAV"),
+        ("SIM_EYES", "Симулятор: камеры глаз", "bool", True, "G — калибровка взгляда"),
+        ("SIM_AUDIO", "Симулятор: микрофон", "bool", True, ""),
+    ]),
     ("Отладка", [
         ("ARL_VK_VALIDATION", "Проверка Vulkan (validation)", "bool", False, "медленнее"),
         ("ARL_GPU", "Видеокарта №", "int", -1, "-1 — авто (дискретная)"),
@@ -136,6 +154,10 @@ def launcher_env(cfg):
             if key == "ARL_VIO":
                 if not value:
                     env["ARL_NO_VIO"] = "1"
+                continue
+            if key == "ARL_WORLD_MAP_ON":
+                if not value:
+                    env["ARL_WORLD_MAP"] = "0"
                 continue
             if kind == "bool":
                 env[key] = "1" if value else "0"
@@ -211,7 +233,7 @@ def run_gui():
     cfg = load_config()
     root = tk.Tk()
     root.title("GlaskiOS Control")
-    root.geometry("1280x720")
+    root.geometry("1500x780")
     root.minsize(1000, 600)
 
     style = ttk.Style(root)
@@ -276,11 +298,13 @@ def run_gui():
     run_tab = ttk.Frame(notebook)
     notebook.add(run_tab, text="Запуск")
     # две колонки: дисплей + трекинг | реализм + звук + отладка
-    columns = [ttk.Frame(run_tab), ttk.Frame(run_tab)]
-    columns[0].grid(row=0, column=0, sticky="n")
-    columns[1].grid(row=0, column=1, sticky="n")
+    columns = [ttk.Frame(run_tab), ttk.Frame(run_tab), ttk.Frame(run_tab)]
+    for c, col in enumerate(columns):
+        col.grid(row=0, column=c, sticky="n")
+    placement = {"Дисплей": 0, "Трекинг": 0, "Реализм": 1, "Звук и метки": 1, "Руки и пространство": 1,
+                 "Линзы шлема": 2, "Модули шлема": 2, "Отладка": 2}
     for index, (title, items) in enumerate(RUN_SECTIONS):
-        box = ttk.LabelFrame(columns[0 if index < 2 else 1], text=title)
+        box = ttk.LabelFrame(columns[placement.get(title, 2)], text=title)
         box.pack(fill="x", padx=6, pady=4)
         for i, item in enumerate(items):
             add_row(box, i, *item)
@@ -305,7 +329,10 @@ def run_gui():
             "Клавиши в лаунчере:\n"
             "  R — центрировать взгляд,  M — крепление телефона (авто/0/90/180/270)\n"
             "  K — окклюзия,  H — тени,  E — свет/отражения,  U — звук\n"
-            "  L — LiDAR цветом,  P — репроекция,  O — предсказание,  Esc — выход")
+            "  V — меш комнаты,  F5 — сохранить карту,  G — калибровка взгляда\n"
+            "  F6 — запись микрофона,  F7 — микрофон в наушники\n"
+            "  L — LiDAR цветом,  P — репроекция,  O — предсказание,  Esc — выход\n"
+            "  Щипок (большой + указательный) — взять объект, отпустить — оставить (запомнится)")
     ttk.Label(info_tab, text=text, justify="left").pack(anchor="w", padx=10, pady=10)
 
     # --- правая колонка: журнал
@@ -446,6 +473,10 @@ def run_gui():
         cmd = [str(sim), "127.0.0.1", "9001", "--seconds", "3600", "--size", "960x720", "--fps", "30", "--depth"]
         if c.get("SIM_ROOM", True):
             cmd.append("--room")
+        if c.get("SIM_EYES", True):
+            cmd.append("--eyes")
+        if c.get("SIM_AUDIO", True):
+            cmd.append("--audio")
         run_steps("Симулятор", [(cmd, str(build_dir(c)), None)])
 
     def do_openvins():

@@ -1603,6 +1603,7 @@ void VulkanRenderer::shutdown()
 
     destroyUIResources();
     collectRetiredMeshes(true);
+    destroyLens();
     destroySceneResources();
     destroyPassthrough();
 
@@ -1748,8 +1749,9 @@ void VulkanRenderer::beginFrame()
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-    renderPassInfo.renderPass = m_renderPass;
-    renderPassInfo.framebuffer = m_swapchainFramebuffers[imageIndex];
+    // С коррекцией линз сцена рисуется в отдельную картинку (тот же формат — все пайплайны совместимы)
+    renderPassInfo.renderPass = lensActive() ? m_offscreenPass : m_renderPass;
+    renderPassInfo.framebuffer = lensActive() ? m_offscreenFramebuffer : m_swapchainFramebuffers[imageIndex];
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapchainExtent;
     std::array<VkClearValue, 2> clearValues{};
@@ -1766,6 +1768,10 @@ void VulkanRenderer::endFrame()
     m_frameActive = false;
 
     VkCommandBuffer cmd = currentCmd();
+    if (lensActive()) {
+        vkCmdEndRenderPass(cmd);
+        drawLensPass(cmd);   // открывает проход на экран и рисует сцену через «линзу»
+    }
     vkCmdEndRenderPass(cmd);
     if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
         std::cerr << "Failed to record command buffer" << std::endl;
@@ -3381,6 +3387,10 @@ void VulkanRenderer::recreateSwapchain()
     createDepthResources();
     createFramebuffers();
     createRenderFinishedSemaphores();
+    if (m_lens.enabled) {
+        destroyLensTargets();
+        createLensTargets();
+    }
 
     destroyUIResources();
 
@@ -4348,6 +4358,303 @@ void VulkanRenderer::writeSceneUbo()
     const int videoFlags = (sp.fullRange ? 1 : 0) | (sp.bt709 ? 2 : 0);
     u.params = glm::vec4(float(flags), float(videoFlags), std::max(0.005f, sp.occlusionSoftness), 1.0f);
     std::memcpy(m_sceneUboPtr[m_frameSlot], &u, sizeof(u));
+}
+
+
+// ---------------- Коррекция линз шлема ----------------
+
+void VulkanRenderer::setLensParams(const LensParams& params)
+{
+    const bool wasEnabled = m_lens.enabled;
+    m_lens = params;
+    if (!m_initialized) return;
+    if (params.enabled && !wasEnabled) {
+        vkDeviceWaitIdle(m_device);
+        if (m_lensPipeline == VK_NULL_HANDLE && !createLensPipeline()) {
+            std::cerr << "[LENS] cannot create lens pipeline (shaders_vk/lens.frag.spv?)" << std::endl;
+            m_lens.enabled = false;
+            return;
+        }
+        if (!createLensTargets()) m_lens.enabled = false;
+    }
+    if (m_lens.enabled)
+        std::cout << "[LENS] distortion k1=" << m_lens.k1 << " k2=" << m_lens.k2 << " chroma=" << m_lens.chroma
+                  << " scale=" << m_lens.scale << (m_lens.stereo ? " stereo" : "") << std::endl;
+}
+
+bool VulkanRenderer::createLensPipeline()
+{
+    // Проход в картинку: те же форматы, что у основного (пайплайны сцены совместимы), на выходе — для чтения шейдером
+    std::array<VkAttachmentDescription, 2> att{};
+    att[0].format = m_swapchainImageFormat;
+    att[0].samples = VK_SAMPLE_COUNT_1_BIT;
+    att[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    att[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    att[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    att[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    att[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    att[0].finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    att[1].format = m_depthFormat;
+    att[1].samples = VK_SAMPLE_COUNT_1_BIT;
+    att[1].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    att[1].storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    att[1].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    att[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    att[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    att[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    VkAttachmentReference colorRef{0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL};
+    VkAttachmentReference depthRef{1, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL};
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorRef;
+    subpass.pDepthStencilAttachment = &depthRef;
+    // Зависимости — как у основного прохода (иначе пайплайны сцены несовместимы); чтение картинки
+    // проходом линзы синхронизируется барьером в drawLensPass. Чтения прошлого кадра (фрагментный шейдер)
+    // покрыты стадией COLOR_ATTACHMENT_OUTPUT (логически более ранние стадии включены).
+    std::array<VkSubpassDependency, 1> deps{};
+    deps[0].srcSubpass = VK_SUBPASS_EXTERNAL;
+    deps[0].dstSubpass = 0;
+    deps[0].srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    deps[0].dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    deps[0].srcAccessMask = 0;
+    deps[0].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    VkRenderPassCreateInfo rp{};
+    rp.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    rp.attachmentCount = uint32_t(att.size());
+    rp.pAttachments = att.data();
+    rp.subpassCount = 1;
+    rp.pSubpasses = &subpass;
+    rp.dependencyCount = uint32_t(deps.size());
+    rp.pDependencies = deps.data();
+    if (vkCreateRenderPass(m_device, &rp, nullptr, &m_offscreenPass) != VK_SUCCESS) return false;
+
+    VkSamplerCreateInfo si{};
+    si.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    si.magFilter = VK_FILTER_LINEAR;
+    si.minFilter = VK_FILTER_LINEAR;
+    si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    si.maxLod = 0.0f;
+    if (vkCreateSampler(m_device, &si, nullptr, &m_lensSampler) != VK_SUCCESS) return false;
+
+    VkDescriptorSetLayoutBinding b{};
+    b.binding = 0;
+    b.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    b.descriptorCount = 1;
+    b.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo li{};
+    li.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    li.bindingCount = 1;
+    li.pBindings = &b;
+    if (vkCreateDescriptorSetLayout(m_device, &li, nullptr, &m_lensSetLayout) != VK_SUCCESS) return false;
+    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1};
+    VkDescriptorPoolCreateInfo pi{};
+    pi.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    pi.maxSets = 1;
+    pi.poolSizeCount = 1;
+    pi.pPoolSizes = &ps;
+    if (vkCreateDescriptorPool(m_device, &pi, nullptr, &m_lensPool) != VK_SUCCESS) return false;
+    VkDescriptorSetAllocateInfo ai{};
+    ai.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    ai.descriptorPool = m_lensPool;
+    ai.descriptorSetCount = 1;
+    ai.pSetLayouts = &m_lensSetLayout;
+    if (vkAllocateDescriptorSets(m_device, &ai, &m_lensSet) != VK_SUCCESS) return false;
+
+    VkPushConstantRange push{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 2 * sizeof(glm::vec4)};
+    VkPipelineLayoutCreateInfo pl{};
+    pl.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pl.setLayoutCount = 1;
+    pl.pSetLayouts = &m_lensSetLayout;
+    pl.pushConstantRangeCount = 1;
+    pl.pPushConstantRanges = &push;
+    if (vkCreatePipelineLayout(m_device, &pl, nullptr, &m_lensPipelineLayout) != VK_SUCCESS) return false;
+
+    auto vertCode = ReadBinaryFileWithFallback("passthrough.vert.spv");
+    auto fragCode = ReadBinaryFileWithFallback("lens.frag.spv");
+    if (vertCode.empty() || fragCode.empty()) return false;
+    VkShaderModule vert = createShaderModule(reinterpret_cast<const uint32_t*>(vertCode.data()), vertCode.size());
+    VkShaderModule frag = createShaderModule(reinterpret_cast<const uint32_t*>(fragCode.data()), fragCode.size());
+    std::array<VkPipelineShaderStageCreateInfo, 2> stages{};
+    stages[0].sType = stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+    stages[0].module = vert;
+    stages[0].pName = "main";
+    stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    stages[1].module = frag;
+    stages[1].pName = "main";
+    VkPipelineVertexInputStateCreateInfo vi{};
+    vi.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    VkPipelineInputAssemblyStateCreateInfo ia{};
+    ia.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    ia.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    VkPipelineViewportStateCreateInfo vp{};
+    vp.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    vp.viewportCount = 1;
+    vp.scissorCount = 1;
+    VkPipelineRasterizationStateCreateInfo rs{};
+    rs.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rs.polygonMode = VK_POLYGON_MODE_FILL;
+    rs.cullMode = VK_CULL_MODE_NONE;
+    rs.lineWidth = 1.0f;
+    VkPipelineMultisampleStateCreateInfo ms{};
+    ms.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    ms.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+    VkPipelineDepthStencilStateCreateInfo ds{};
+    ds.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    VkPipelineColorBlendAttachmentState ba{};
+    ba.colorWriteMask = 0xF;
+    VkPipelineColorBlendStateCreateInfo cb{};
+    cb.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    cb.attachmentCount = 1;
+    cb.pAttachments = &ba;
+    std::array<VkDynamicState, 2> dyn = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
+    VkPipelineDynamicStateCreateInfo dy{};
+    dy.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dy.dynamicStateCount = uint32_t(dyn.size());
+    dy.pDynamicStates = dyn.data();
+    VkGraphicsPipelineCreateInfo gi{};
+    gi.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    gi.stageCount = 2;
+    gi.pStages = stages.data();
+    gi.pVertexInputState = &vi;
+    gi.pInputAssemblyState = &ia;
+    gi.pViewportState = &vp;
+    gi.pRasterizationState = &rs;
+    gi.pMultisampleState = &ms;
+    gi.pDepthStencilState = &ds;
+    gi.pColorBlendState = &cb;
+    gi.pDynamicState = &dy;
+    gi.layout = m_lensPipelineLayout;
+    gi.renderPass = m_renderPass;
+    gi.subpass = 0;
+    const bool ok = vert && frag && vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &gi, nullptr, &m_lensPipeline) == VK_SUCCESS;
+    if (vert) vkDestroyShaderModule(m_device, vert, nullptr);
+    if (frag) vkDestroyShaderModule(m_device, frag, nullptr);
+    return ok;
+}
+
+bool VulkanRenderer::createLensTargets()
+{
+    VkImageCreateInfo ii{};
+    ii.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    ii.imageType = VK_IMAGE_TYPE_2D;
+    ii.extent = {m_swapchainExtent.width, m_swapchainExtent.height, 1};
+    ii.mipLevels = 1;
+    ii.arrayLayers = 1;
+    ii.format = m_swapchainImageFormat;
+    ii.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ii.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    ii.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    ii.samples = VK_SAMPLE_COUNT_1_BIT;
+    if (vkCreateImage(m_device, &ii, nullptr, &m_offscreenImage) != VK_SUCCESS) return false;
+    VkMemoryRequirements req;
+    vkGetImageMemoryRequirements(m_device, m_offscreenImage, &req);
+    VkMemoryAllocateInfo ma{};
+    ma.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    ma.allocationSize = req.size;
+    ma.memoryTypeIndex = findMemoryType(req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (vkAllocateMemory(m_device, &ma, nullptr, &m_offscreenMemory) != VK_SUCCESS) return false;
+    vkBindImageMemory(m_device, m_offscreenImage, m_offscreenMemory, 0);
+    VkImageViewCreateInfo vi{};
+    vi.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    vi.image = m_offscreenImage;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    vi.format = m_swapchainImageFormat;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    if (vkCreateImageView(m_device, &vi, nullptr, &m_offscreenView) != VK_SUCCESS) return false;
+    VkImageView views[] = {m_offscreenView, m_depthImageView};
+    VkFramebufferCreateInfo fi{};
+    fi.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    fi.renderPass = m_offscreenPass;
+    fi.attachmentCount = 2;
+    fi.pAttachments = views;
+    fi.width = m_swapchainExtent.width;
+    fi.height = m_swapchainExtent.height;
+    fi.layers = 1;
+    if (vkCreateFramebuffer(m_device, &fi, nullptr, &m_offscreenFramebuffer) != VK_SUCCESS) return false;
+    VkDescriptorImageInfo img{m_lensSampler, m_offscreenView, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet w{};
+    w.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    w.dstSet = m_lensSet;
+    w.dstBinding = 0;
+    w.descriptorCount = 1;
+    w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    w.pImageInfo = &img;
+    vkUpdateDescriptorSets(m_device, 1, &w, 0, nullptr);
+    return true;
+}
+
+void VulkanRenderer::destroyLensTargets()
+{
+    if (m_offscreenFramebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(m_device, m_offscreenFramebuffer, nullptr);
+    if (m_offscreenView != VK_NULL_HANDLE) vkDestroyImageView(m_device, m_offscreenView, nullptr);
+    if (m_offscreenImage != VK_NULL_HANDLE) vkDestroyImage(m_device, m_offscreenImage, nullptr);
+    if (m_offscreenMemory != VK_NULL_HANDLE) vkFreeMemory(m_device, m_offscreenMemory, nullptr);
+    m_offscreenFramebuffer = VK_NULL_HANDLE;
+    m_offscreenView = VK_NULL_HANDLE;
+    m_offscreenImage = VK_NULL_HANDLE;
+    m_offscreenMemory = VK_NULL_HANDLE;
+}
+
+void VulkanRenderer::destroyLens()
+{
+    if (m_device == VK_NULL_HANDLE) return;
+    destroyLensTargets();
+    if (m_lensPipeline != VK_NULL_HANDLE) vkDestroyPipeline(m_device, m_lensPipeline, nullptr);
+    if (m_lensPipelineLayout != VK_NULL_HANDLE) vkDestroyPipelineLayout(m_device, m_lensPipelineLayout, nullptr);
+    if (m_lensPool != VK_NULL_HANDLE) vkDestroyDescriptorPool(m_device, m_lensPool, nullptr);
+    if (m_lensSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(m_device, m_lensSetLayout, nullptr);
+    if (m_lensSampler != VK_NULL_HANDLE) vkDestroySampler(m_device, m_lensSampler, nullptr);
+    if (m_offscreenPass != VK_NULL_HANDLE) vkDestroyRenderPass(m_device, m_offscreenPass, nullptr);
+    m_lensPipeline = VK_NULL_HANDLE;
+    m_lensPipelineLayout = VK_NULL_HANDLE;
+    m_lensPool = VK_NULL_HANDLE;
+    m_lensSetLayout = VK_NULL_HANDLE;
+    m_lensSampler = VK_NULL_HANDLE;
+    m_offscreenPass = VK_NULL_HANDLE;
+    m_lensSet = VK_NULL_HANDLE;
+}
+
+void VulkanRenderer::drawLensPass(VkCommandBuffer cmd)
+{
+    // Картинка сцены дописана — делаем её видимой фрагментному шейдеру прохода линзы
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = m_offscreenImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0,
+                         nullptr, 0, nullptr, 1, &barrier);
+
+    VkRenderPassBeginInfo bi{};
+    bi.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    bi.renderPass = m_renderPass;
+    bi.framebuffer = m_swapchainFramebuffers[m_currentImageIndex];
+    bi.renderArea.extent = m_swapchainExtent;
+    std::array<VkClearValue, 2> clear{};
+    clear[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+    clear[1].depthStencil = {1.0f, 0};
+    bi.clearValueCount = uint32_t(clear.size());
+    bi.pClearValues = clear.data();
+    vkCmdBeginRenderPass(cmd, &bi, VK_SUBPASS_CONTENTS_INLINE);
+    const VkViewport viewport{0.0f, 0.0f, float(m_swapchainExtent.width), float(m_swapchainExtent.height), 0.0f, 1.0f};
+    const VkRect2D scissor{{0, 0}, m_swapchainExtent};
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lensPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lensPipelineLayout, 0, 1, &m_lensSet, 0, nullptr);
+    const float eyeWidth = float(m_swapchainExtent.width) / (m_lens.stereo ? 2.0f : 1.0f);
+    const glm::vec4 push[2] = {glm::vec4(m_lens.k1, m_lens.k2, m_lens.chroma, m_lens.scale),
+                               glm::vec4(m_lens.stereo ? 1.0f : 0.0f, eyeWidth / float(m_swapchainExtent.height),
+                                         m_lens.centerShift, 0.0f)};
+    vkCmdPushConstants(cmd, m_lensPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(push), push);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
 }
 
 #endif // USE_VULKAN

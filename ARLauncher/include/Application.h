@@ -24,12 +24,15 @@ namespace LensEngine {
     class EnvironmentProbe;
     class MarkerTracker;
     class HandTrackingProvider;
+    class EyeTracker;
 }
 
 namespace sensorstream {
     class StreamReceiver;
     struct DepthFrame;
     struct VideoFrame;
+    struct EyeImage;
+    struct AudioChunk;
 }
 
 class Button;
@@ -41,6 +44,7 @@ class ARLauncherAPI;
 class FontRenderer;
 class LiDARVisualizer;
 class AudioEngine;
+class WavWriter;
 
 /**
  * @brief Главный класс приложения ARLauncher (GlaskiOS)
@@ -160,6 +164,28 @@ private:
     bool m_gazeFromEyes = false;
     glm::vec3 m_gazeOrigin{0.0f};
     glm::vec3 m_gazeDirection{0.0f, 0.0f, -1.0f};
+    // ---- Модули шлема: айтрекинг (ИК-камеры глаз) и микрофон — пакеты EYE / AUDIO протокола v2
+    std::unique_ptr<LensEngine::EyeTracker> m_eyes;
+    std::atomic<int64_t> m_eyePcNs{0};
+    std::string m_eyeCalibPath;
+    struct EyeCalibration {
+        bool active = false;
+        int index = 0;
+        std::chrono::steady_clock::time_point start;
+    } m_eyeCalib;
+    std::mutex m_micMutex;
+    std::unique_ptr<WavWriter> m_micWav;
+    std::atomic<bool> m_micRecording{false};
+    std::atomic<float> m_micLevelDb{-90.0f};
+    std::atomic<int64_t> m_micPcNs{0};
+    std::atomic<int> m_micRate{0};
+    bool m_micMonitor = false;                // ARL_MIC_MONITOR / F7 — микрофон в наушники
+    void handleEyeImage(const sensorstream::EyeImage& e);
+    void handleMicAudio(const sensorstream::AudioChunk& a);
+    void startEyeCalibration();
+    void updateEyeCalibration();
+    void toggleMicRecording();
+    static const glm::vec2* eyeCalibrationTargets(int& count);
     void initializeSpatial();
     void shutdownSpatial();
     void updateSpatial();
