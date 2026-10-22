@@ -85,7 +85,24 @@ int main()
     std::printf("eye/camera forward mismatch: %.3f deg\n", maxForwardErr);
     const auto st = session.status();
     std::printf("mount: %d deg, mode: %s\n", st.mountRollDeg, st.mode.c_str());
-    const bool ok = maxErr < 0.5 && maxForwardErr < 0.5 && st.mountRollDeg == 0;
+
+    // Телефон перевернули на 180° (верх вправо) после старта: крепление должно переключиться само
+    LensEngine::TrackingSession flipped;
+    LensEngine::TrackingSession::Options fopts;
+    fopts.enableVio = false;
+    flipped.start(fopts);
+    int64_t ft = 0;
+    for (int i = 0; i < 100; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(9.8, 0, 0), true);
+    const int before = flipped.status().mountRollDeg;
+    for (int i = 0; i < 300; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(-9.8, 0, 0), true);
+    const int after = flipped.status().mountRollDeg;
+    // Взгляд вниз (гравитация вдоль z) крепление не переключает
+    for (int i = 0; i < 300; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(2.0, 0, 9.6), true);
+    const int lookDown = flipped.status().mountRollDeg;
+    std::printf("mount flip: %d -> %d (look down keeps %d)\n", before, after, lookDown);
+
+    const bool ok = maxErr < 0.5 && maxForwardErr < 0.5 && st.mountRollDeg == 0 &&
+                    before == 0 && after == 180 && lookDown == 180;
     std::printf("%s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

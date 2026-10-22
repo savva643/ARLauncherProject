@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iomanip>
@@ -82,6 +83,7 @@ bool Application::initialize(int argc, char* argv[])
     m_predictLeadMs = envDouble("ARL_PREDICT_MS", -1.0);
     m_eyeHFovDeg = static_cast<float>(envDouble("ARL_FOV", 0.0));
     m_stereo = envFlag("ARL_STEREO");
+    m_depthOverlay = envFlag("ARL_LIDAR_OVERLAY");
     m_ipdMeters = static_cast<float>(envDouble("ARL_IPD_MM", 63.0) / 1000.0);
     m_eyeCount = m_stereo ? 2 : 1;
 
@@ -124,7 +126,7 @@ bool Application::initialize(int argc, char* argv[])
     m_initialized = true;
     m_running = true;
 
-    std::cout << "[CONTROLS] R — recenter, P — reprojection on/off, O — prediction on/off, ESC — exit" << std::endl;
+    std::cout << "[CONTROLS] R — recenter, P — reprojection on/off, O — prediction on/off, L — LiDAR overlay, ESC — exit" << std::endl;
     return true;
 }
 
@@ -311,24 +313,28 @@ bool Application::initializeUI()
     
     // Виджет для отображения данных камеры
     auto cameraInfoText = std::make_shared<Text>("📷 Camera: Waiting...");
+    m_cameraText = cameraInfoText;
     cameraInfoText->setPosition(glm::vec2(20.0f, 80.0f));
     cameraInfoText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(cameraInfoText);
     
     // Виджет для отображения позы
     auto poseText = std::make_shared<Text>("📍 Position: (0, 0, 0)");
+    m_poseText = poseText;
     poseText->setPosition(glm::vec2(20.0f, 110.0f));
     poseText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(poseText);
     
     // Виджет для IMU данных
     auto imuText = std::make_shared<Text>("⚡ IMU: No data");
+    m_imuText = imuText;
     imuText->setPosition(glm::vec2(20.0f, 140.0f));
     imuText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(imuText);
     
     // Виджет для статуса подключения iPhone
     auto connectionText = std::make_shared<Text>("📡 iPhone: Disconnected");
+    m_connectionText = connectionText;
     connectionText->setPosition(glm::vec2(20.0f, 170.0f));
     connectionText->setStyle(std::make_shared<Style>(Style::createARTextStyle()));
     m_uiRenderer->addElement(connectionText);
@@ -389,8 +395,11 @@ bool Application::initializeSensorStream()
     m_depthThread = std::thread(&Application::depthWorker, this);
     m_stream->setDepthCallback([this](const sensorstream::DepthFrame& d) {
         auto copy = std::make_shared<sensorstream::DepthFrame>(d);
+        m_depthW = d.width;
+        m_depthH = d.height;
         {
             std::lock_guard<std::mutex> lock(m_depthMutex);
+            m_overlayDepth = copy;
             m_pendingDepth = std::move(copy);
         }
         m_depthCv.notify_one();
@@ -480,6 +489,23 @@ void Application::latchFrame()
     // Видео: загрузка свежего кадра + репроекция под позу показа
     m_pt->valid = false;
     if (frame && !frame->y.empty()) {
+        // LiDAR: до видео, чтобы дескриптор глубины уже указывал на настоящую карту
+        if (m_depthOverlay) {
+            std::shared_ptr<sensorstream::DepthFrame> depth;
+            {
+                std::lock_guard<std::mutex> lock(m_depthMutex);
+                depth = m_overlayDepth;
+            }
+            if (depth && !depth->depth.empty()) {
+                VulkanRenderer::DepthOverlayFrame df;
+                df.depth = depth->depth.data();
+                df.width = static_cast<uint32_t>(depth->width);
+                df.height = static_cast<uint32_t>(depth->height);
+                df.id = static_cast<uint64_t>(depth->tNs);
+                vk->uploadDepthOverlay(df);
+            }
+        }
+
         VulkanRenderer::PassthroughFrame pf;
         pf.y = frame->y.data();
         pf.uv = frame->uv.data();
@@ -494,6 +520,7 @@ void Application::latchFrame()
         p.eyeTanHalfFov = glm::vec2(tanX, tanY);
         p.fullRange = frame->fullRange;
         p.bt709 = frame->bt709;
+        p.depthOverlay = m_depthOverlay ? 0.55f : 0.0f;
 
         // Если поток оборвался — «застывшее» видео плавно гасим (неподвижная картинка укачивает)
         const double ageMs = double(now - frame->decodedPcNs) * 1e-6;
@@ -528,7 +555,56 @@ void Application::update(float deltaTime)
         m_scene->update(deltaTime);
     }
     updateSplash();
+    updateHud();
     printStats();
+}
+
+void Application::updateHud()
+{
+    const auto now = std::chrono::steady_clock::now();
+    if (now - m_hudUpdate < std::chrono::milliseconds(250)) return;
+    m_hudUpdate = now;
+    if (!m_cameraText || !m_stream) return;
+
+    char buf[256];
+    const auto ss = m_stream->stats();
+    const auto frame = m_stream->latestVideoFrame();
+    if (ss.clientConnected && frame) {
+        std::snprintf(buf, sizeof(buf), "Camera: %dx%d %.0f fps, %s%s", frame->width, frame->height,
+                      ss.videoFpsDecoded, ss.decoderName.c_str(), frame->fullRange ? "" : ", limited range");
+    } else {
+        std::snprintf(buf, sizeof(buf), "Camera: Waiting...");
+    }
+    m_cameraText->setText(buf);
+
+    if (m_tracking) {
+        const auto st = m_tracking->status();
+        const glm::mat4 worldFromEye = glm::inverse(m_viewMatrix[0]);
+        std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m", st.mode.c_str(),
+                      worldFromEye[3].x, worldFromEye[3].y, worldFromEye[3].z);
+        m_poseText->setText(buf);
+        if (st.imuActive) {
+            std::snprintf(buf, sizeof(buf), "IMU: %.0f Hz, mount %d°, gyro bias %.3f°/s", ss.imuRateHz,
+                          st.mountRollDeg, glm::degrees(glm::length(st.gyroBias)));
+        } else {
+            std::snprintf(buf, sizeof(buf), "IMU: No data");
+        }
+        m_imuText->setText(buf);
+    }
+
+    if (ss.clientConnected) {
+        const int dw = m_depthW.load();
+        if (dw > 0) {
+            std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR %dx%d%s", ss.megabitsPerSecond, dw,
+                          m_depthH.load(), m_depthOverlay ? " (overlay L)" : "");
+        } else {
+            std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR off", ss.megabitsPerSecond);
+        }
+    } else {
+        std::snprintf(buf, sizeof(buf), "iPhone: Disconnected (USB :9001 / Wi-Fi :9000)");
+        m_depthW = 0;
+    }
+    m_connectionText->setText(buf);
 }
 
 void Application::updateSplash()
@@ -705,6 +781,10 @@ void Application::onKeyPress(GLFWwindow* window, int key, int scancode, int acti
     case GLFW_KEY_P:
         app->m_reprojection = !app->m_reprojection;
         std::cout << "[TRACKING] reprojection " << (app->m_reprojection ? "ON" : "OFF") << std::endl;
+        break;
+    case GLFW_KEY_L:
+        app->m_depthOverlay = !app->m_depthOverlay;
+        std::cout << "[LIDAR] depth overlay " << (app->m_depthOverlay ? "ON" : "OFF") << std::endl;
         break;
     case GLFW_KEY_O:
         app->m_prediction = !app->m_prediction;

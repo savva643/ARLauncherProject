@@ -1,5 +1,6 @@
 #include "TrackingSession.h"
 
+#include <cmath>
 #include <iostream>
 
 namespace LensEngine {
@@ -42,6 +43,9 @@ void TrackingSession::start(const Options& options)
     m_head.reset();
     m_mountAccelSum = glm::dvec3(0.0);
     m_mountCount = 0;
+    m_mountFlipCount = 0;
+    m_portraitCount = 0;
+    m_portraitWarned = false;
     if (options.mountRollDeg >= 0) {
         m_mountRoll = options.mountRollDeg == 180 ? 180 : 0;
         m_mountResolved = true;
@@ -77,8 +81,11 @@ void TrackingSession::addImu(int64_t phoneTimeNs, const glm::dvec3& gyro, const 
             // Канонично ось x устройства смотрит вверх (specific force +x); иначе телефон перевёрнут
             m_mountRoll = (m_mountAccelSum.x >= 0) ? 0 : 180;
             m_mountResolved = true;
+            m_gravityLp = m_mountAccelSum / double(m_mountCount);
             std::cout << "[LensEngine] phone mount detected: roll " << m_mountRoll.load() << " deg" << std::endl;
         }
+    } else if (hasAccel && m_options.mountRollDeg < 0) {
+        updateMount(accel);
     }
 
     m_head.addImu(phoneTimeNs, gyro, accel, hasAccel);
@@ -90,6 +97,39 @@ void TrackingSession::addFrame(int64_t phoneTimeNs, const uint8_t* y, int width,
                                float fx, float fy, float cx, float cy)
 {
     if (m_vio) m_vio->addFrame(phoneTimeNs, y, width, height, stride, fx, fy, cx, cy);
+}
+
+void TrackingSession::updateMount(const glm::dvec3& accel)
+{
+    // Авто-режим: телефон могли перевернуть после подключения (подключились с телефоном в руке,
+    // потом вставили в шлем другой стороной). Гравитация усредняется ~0.5 с, переключение —
+    // только если новое положение держится 1 с и телефон явно горизонтален (гистерезис:
+    // взгляд вверх/вниз крепление не переключает).
+    m_gravityLp += (accel - m_gravityLp) * 0.02;
+    const double g = glm::length(m_gravityLp);
+    if (g < 5.0) return;   // свободное падение / тряска
+
+    const int desired = m_gravityLp.x >= 0 ? 0 : 180;
+    if (std::abs(m_gravityLp.x) > 0.6 * g && desired != m_mountRoll.load()) {
+        if (++m_mountFlipCount >= 100) {
+            m_mountRoll = desired;
+            m_mountFlipCount = 0;
+            std::cout << "[LensEngine] phone mount changed: roll " << desired << " deg" << std::endl;
+        }
+    } else {
+        m_mountFlipCount = 0;
+    }
+
+    // Портрет: ось y устройства вдоль гравитации. Камера тогда повёрнута на 90° — шлем рассчитан на ландшафт
+    if (std::abs(m_gravityLp.y) > 0.8 * g) {
+        if (++m_portraitCount >= 200 && !m_portraitWarned) {
+            m_portraitWarned = true;
+            std::cout << "[LensEngine] WARNING: phone is in portrait — mount it in landscape for correct passthrough" << std::endl;
+        }
+    } else {
+        m_portraitCount = 0;
+        m_portraitWarned = false;
+    }
 }
 
 glm::dquat TrackingSession::deviceFromEye() const

@@ -2,6 +2,8 @@
 #include "FontRenderer.h"
 #include <algorithm>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/gtc/packing.hpp>
+#include <cmath>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/quaternion.hpp>
 
@@ -1391,12 +1393,13 @@ void OpenGLRenderer::createUIQuad()
 namespace {
 std::vector<char> ReadBinaryFileWithFallback(const char* filepath)
 {
+    // Сначала папка сборки (shaders_vk/ рядом с бинарником): иначе может подхватиться устаревший .spv
     std::vector<std::string> fallbackPaths = {
+        std::string("shaders_vk/") + filepath,
         filepath,
         std::string("../") + filepath,
         std::string("../../") + filepath,
         std::string("../../../") + filepath,
-        std::string("shaders_vk/") + filepath,
         std::string("ARLauncher/shaders_vk/") + filepath,
         std::string("build/shaders_vk/") + filepath,
         std::string("ARLauncher/build/shaders_vk/") + filepath,
@@ -3579,8 +3582,9 @@ bool VulkanRenderer::createPassthroughPipeline()
     samplerInfo.maxLod = 0.0f;
     if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_ptSampler) != VK_SUCCESS) return false;
 
-    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
-    for (uint32_t i = 0; i < 2; ++i) {
+    // 0 = Y, 1 = CbCr, 2 = глубина LiDAR
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+    for (uint32_t i = 0; i < 3; ++i) {
         bindings[i].binding = i;
         bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         bindings[i].descriptorCount = 1;
@@ -3592,7 +3596,7 @@ bool VulkanRenderer::createPassthroughPipeline()
     layoutInfo.pBindings = bindings.data();
     if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_ptSetLayout) != VK_SUCCESS) return false;
 
-    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2};
+    VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3};
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.maxSets = 1;
@@ -3610,7 +3614,7 @@ bool VulkanRenderer::createPassthroughPipeline()
     VkPushConstantRange push{};
     push.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     push.offset = 0;
-    push.size = sizeof(glm::mat4) + 2 * sizeof(glm::vec4);
+    push.size = sizeof(glm::mat4) + 3 * sizeof(glm::vec4);
     VkPipelineLayoutCreateInfo plInfo{};
     plInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     plInfo.setLayoutCount = 1;
@@ -3758,6 +3762,12 @@ void VulkanRenderer::uploadPassthroughFrame(const PassthroughFrame& frame)
     if (!m_frameActive || !frame.y || !frame.uv || frame.width == 0 || frame.height == 0) return;
     if (frame.id != 0 && frame.id == m_ptLastId && m_ptHasFrame) return;
     if (!ensurePassthroughResources(frame.width, frame.height)) return;
+    if (!m_ptDepthLayoutReady) {
+        // Дескриптор глубины должен быть валиден, даже если LiDAR выключен: пустая карта 1x1
+        const uint16_t zero = 0;
+        uploadDepthHalf(&zero, 1, 1);
+        m_ptHasDepth = false;
+    }
 
     // Слот m_frameSlot свободен (fence дождались в beginFrame) — пишем в его staging
     const size_t ySize = size_t(frame.width) * frame.height;
@@ -3825,13 +3835,118 @@ void VulkanRenderer::renderPassthrough(const PassthroughParams& params)
         glm::mat4 cvFromEye;
         glm::vec4 cam;
         glm::vec4 eye;
+        glm::vec4 depth;
     } pc;
     pc.cvFromEye = glm::mat4(params.cvFromEye);
     pc.cam = params.camIntrinsicsNorm;
     const float flags = (params.fullRange ? 1.0f : 0.0f) + (params.bt709 ? 2.0f : 0.0f);
     pc.eye = glm::vec4(params.eyeTanHalfFov.x, params.eyeTanHalfFov.y, params.opacity, flags);
+    pc.depth = glm::vec4(m_ptHasDepth ? params.depthOverlay : 0.0f, std::max(0.5f, params.depthMaxMeters), 0.0f, 0.0f);
     vkCmdPushConstants(cmd, m_ptPipelineLayout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Push), &pc);
     vkCmdDraw(cmd, 3, 1, 0, 0);
+}
+
+// ---------------- LiDAR: карта глубины для наложения поверх видео ----------------
+
+void VulkanRenderer::destroyDepthResources()
+{
+    destroyPlaneImage(m_ptDepth);
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        if (m_ptDepthStagingPtr[i]) vkUnmapMemory(m_device, m_ptDepthStagingMemory[i]);
+        if (m_ptDepthStaging[i] != VK_NULL_HANDLE) vkDestroyBuffer(m_device, m_ptDepthStaging[i], nullptr);
+        if (m_ptDepthStagingMemory[i] != VK_NULL_HANDLE) vkFreeMemory(m_device, m_ptDepthStagingMemory[i], nullptr);
+        m_ptDepthStaging[i] = VK_NULL_HANDLE;
+        m_ptDepthStagingMemory[i] = VK_NULL_HANDLE;
+        m_ptDepthStagingPtr[i] = nullptr;
+    }
+    m_ptDepthW = m_ptDepthH = 0;
+    m_ptDepthLayoutReady = false;
+    m_ptHasDepth = false;
+}
+
+bool VulkanRenderer::ensureDepthResources(uint32_t width, uint32_t height)
+{
+    if (m_ptDepth.image != VK_NULL_HANDLE && width == m_ptDepthW && height == m_ptDepthH) return true;
+
+    // Размер карты поменялся (1x1 заглушка -> 256x192 и т.п.): ждём GPU и пересоздаём
+    vkDeviceWaitIdle(m_device);
+    destroyDepthResources();
+    if (!createPlaneImage(m_ptDepth, VK_FORMAT_R16_SFLOAT, width, height)) {
+        std::cerr << "[LIDAR] failed to create depth texture" << std::endl;
+        return false;
+    }
+    const VkDeviceSize size = VkDeviceSize(width) * height * sizeof(uint16_t);
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        if (!createBuffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          m_ptDepthStaging[i], m_ptDepthStagingMemory[i])) {
+            return false;
+        }
+        vkMapMemory(m_device, m_ptDepthStagingMemory[i], 0, size, 0, &m_ptDepthStagingPtr[i]);
+    }
+
+    VkDescriptorImageInfo image{m_ptSampler, m_ptDepth.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_ptSet;
+    write.dstBinding = 2;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.pImageInfo = &image;
+    vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+
+    m_ptDepthW = width;
+    m_ptDepthH = height;
+    if (width > 1) std::cout << "[LIDAR] depth texture " << width << "x" << height << std::endl;
+    return true;
+}
+
+void VulkanRenderer::uploadDepthHalf(const uint16_t* half, uint32_t width, uint32_t height)
+{
+    if (!ensureDepthResources(width, height)) return;
+    std::memcpy(m_ptDepthStagingPtr[m_frameSlot], half, size_t(width) * height * sizeof(uint16_t));
+
+    VkCommandBuffer cmd = currentCmd();
+    VkImageMemoryBarrier b{};
+    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b.oldLayout = m_ptDepthLayoutReady ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = m_ptDepth.image;
+    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd,
+                         m_ptDepthLayoutReady ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {width, height, 1};
+    vkCmdCopyBufferToImage(cmd, m_ptDepthStaging[m_frameSlot], m_ptDepth.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &b);
+    m_ptDepthLayoutReady = true;
+}
+
+void VulkanRenderer::uploadDepthOverlay(const DepthOverlayFrame& frame)
+{
+    if (!m_frameActive || m_ptSet == VK_NULL_HANDLE || !frame.depth || frame.width == 0 || frame.height == 0) return;
+    if (frame.id != 0 && frame.id == m_ptDepthLastId && m_ptHasDepth) return;
+
+    std::vector<uint16_t> half(size_t(frame.width) * frame.height);
+    for (size_t i = 0; i < half.size(); ++i) {
+        const float d = frame.depth[i];
+        half[i] = glm::packHalf1x16(std::isfinite(d) ? d : 0.0f);
+    }
+    uploadDepthHalf(half.data(), frame.width, frame.height);
+    m_ptHasDepth = true;
+    m_ptDepthLastId = frame.id;
 }
 
 void VulkanRenderer::setEyeViewport(float x, float y, float width, float height)
@@ -3856,6 +3971,7 @@ void VulkanRenderer::destroyPassthrough()
     if (m_device == VK_NULL_HANDLE) return;
     destroyPlaneImage(m_ptY);
     destroyPlaneImage(m_ptUV);
+    destroyDepthResources();
     for (uint32_t i = 0; i < kFramesInFlight; ++i) {
         if (m_ptStagingPtr[i]) vkUnmapMemory(m_device, m_ptStagingMemory[i]);
         if (m_ptStaging[i] != VK_NULL_HANDLE) vkDestroyBuffer(m_device, m_ptStaging[i], nullptr);

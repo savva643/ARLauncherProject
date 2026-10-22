@@ -133,6 +133,14 @@ public:
         float opacity = 1.0f;
         bool fullRange = true;
         bool bt709 = true;
+        float depthOverlay = 0.0f;                            // 0..1 — LiDAR цветом поверх видео (отладка)
+        float depthMaxMeters = 5.0f;
+    };
+    struct DepthOverlayFrame {
+        const float* depth = nullptr;   // метры, width*height; карта глубины выровнена с кадром камеры
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint64_t id = 0;
     };
 
     /// Колбэк вызывается каждый кадр ПОСЛЕ ожидания свободного кадра и acquire, но ДО начала render pass.
@@ -140,6 +148,9 @@ public:
     void setPreRenderPassCallback(std::function<void()> cb) { m_preRenderPass = std::move(cb); }
     /// Только из pre-render-pass колбэка: копирование кадра в GPU-текстуры (staging, без остановки конвейера)
     void uploadPassthroughFrame(const PassthroughFrame& frame);
+    /// Только из pre-render-pass колбэка: карта глубины LiDAR (для наложения в renderPassthrough)
+    void uploadDepthOverlay(const DepthOverlayFrame& frame);
+    bool hasDepthOverlay() const { return m_ptHasDepth; }
     /// Внутри render pass: полноэкранный проход с репроекцией
     void renderPassthrough(const PassthroughParams& params);
     bool hasPassthroughFrame() const { return m_ptHasFrame; }
@@ -178,6 +189,15 @@ private:
     };
     PlaneImage m_ptY;
     PlaneImage m_ptUV;
+    PlaneImage m_ptDepth;   // R16_SFLOAT, метры
+    uint32_t m_ptDepthW = 0;
+    uint32_t m_ptDepthH = 0;
+    bool m_ptDepthLayoutReady = false;
+    bool m_ptHasDepth = false;
+    uint64_t m_ptDepthLastId = 0;
+    std::array<VkBuffer, kFramesInFlight> m_ptDepthStaging{};
+    std::array<VkDeviceMemory, kFramesInFlight> m_ptDepthStagingMemory{};
+    std::array<void*, kFramesInFlight> m_ptDepthStagingPtr{};
     uint32_t m_ptWidth = 0;
     uint32_t m_ptHeight = 0;
     bool m_ptLayoutReady = false;
@@ -196,6 +216,9 @@ private:
     bool createPassthroughPipeline();
     void destroyPassthrough();
     bool ensurePassthroughResources(uint32_t width, uint32_t height);
+    bool ensureDepthResources(uint32_t width, uint32_t height);
+    void destroyDepthResources();
+    void uploadDepthHalf(const uint16_t* half, uint32_t width, uint32_t height);
     bool createPlaneImage(PlaneImage& plane, VkFormat format, uint32_t width, uint32_t height);
     void destroyPlaneImage(PlaneImage& plane);
 

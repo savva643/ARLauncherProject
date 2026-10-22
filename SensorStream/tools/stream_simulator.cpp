@@ -356,7 +356,7 @@ int main(int argc, char** argv)
                 while (avcodec_receive_packet(enc, pkt) == 0) {
                     std::vector<uint8_t> p(kVideoHeaderSize + size_t(pkt->size), 0);
                     p[0] = uint8_t(hevc ? VideoCodec::HEVC : VideoCodec::H264);
-                    p[1] = (pkt->flags & AV_PKT_FLAG_KEY) ? 1 : 0;
+                    p[1] = uint8_t(((pkt->flags & AV_PKT_FLAG_KEY) ? kVideoFlagKeyframe : 0) | kVideoFlagColorInfo | kVideoFlagFullRange | kVideoFlagBT709);
                     wrU16(p.data() + 4, uint16_t(width));
                     wrU16(p.data() + 6, uint16_t(height));
                     wrI64(p.data() + 8, pkt->pts);

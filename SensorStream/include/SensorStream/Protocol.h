@@ -37,6 +37,11 @@ enum class ImuKind : uint8_t {
 
 constexpr size_t kPacketHeaderSize = 13;
 constexpr size_t kVideoHeaderSize = 48;
+// Флаги VIDEO (байт 1)
+constexpr uint8_t kVideoFlagKeyframe = 1u << 0;
+constexpr uint8_t kVideoFlagColorInfo = 1u << 1;   // биты 2–3 валидны
+constexpr uint8_t kVideoFlagFullRange = 1u << 2;   // YUV 0..255 (иначе 16..235)
+constexpr uint8_t kVideoFlagBT709 = 1u << 3;       // матрица BT.709 (иначе BT.601)
 constexpr size_t kImuHeaderSize = 16;
 constexpr size_t kImuRecordSize = 24;
 constexpr size_t kDepthHeaderSize = 32;

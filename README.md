@@ -11,6 +11,7 @@ AR лаунчер для операционной системы AR - проек
 
 Как собрать, запустить и проверить без iPhone: [docs/GLASKI_STREAMING.md](docs/GLASKI_STREAMING.md).
 Протокол: [docs/PROTOCOL_V2.md](docs/PROTOCOL_V2.md).
+Что работает, а чего ещё нет (видео, IMU, LiDAR, тени, свет, звук, метки): [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md).
 
 ```bash
 ./build_arlauncher.sh --vio && cd ARLauncher/build_vk && ./bin/ARLauncher

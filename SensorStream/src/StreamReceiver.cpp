@@ -244,7 +244,8 @@ void StreamReceiver::handleVideo(const uint8_t* p, size_t n)
     if (n < kVideoHeaderSize) return;
     EncodedFrame f;
     f.codec = static_cast<VideoCodec>(p[0]);
-    f.keyframe = (p[1] & 1) != 0;
+    f.flags = p[1];
+    f.keyframe = (f.flags & kVideoFlagKeyframe) != 0;
     f.width = rdU16(p + 4);
     f.height = rdU16(p + 6);
     f.ptsNs = rdI64(p + 8);
@@ -440,6 +441,11 @@ void StreamReceiver::decodeLoop()
         frame->pcPtsNs = m_clock.phoneToPc(f.ptsNs);
         frame->decodedPcNs = t1;
         frame->exposureUs = f.exposureUs;
+        // Цвет: телефон знает точно (420f + матрица буфера камеры) — важнее VUI потока
+        if (f.flags & kVideoFlagColorInfo) {
+            frame->fullRange = (f.flags & kVideoFlagFullRange) != 0;
+            frame->bt709 = (f.flags & kVideoFlagBT709) != 0;
+        }
         frame->index = ++m_decodedIndex;
 
         m_decodeNsSum += (t1 - t0);

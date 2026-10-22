@@ -69,6 +69,7 @@ private:
         int width = 0, height = 0;
         float fx = 0, fy = 0, cx = 0, cy = 0;
         uint32_t exposureUs = 0;
+        uint8_t flags = 0;          // биты VIDEO-заголовка (kVideoFlag*)
         std::vector<uint8_t> data;
     };
 

@@ -145,6 +145,18 @@ private:
     std::mutex m_depthMutex;
     std::condition_variable m_depthCv;
     std::shared_ptr<sensorstream::DepthFrame> m_pendingDepth;
+    std::shared_ptr<sensorstream::DepthFrame> m_overlayDepth;   // для наложения LiDAR в рендере (клавиша L)
+    bool m_depthOverlay = false;
+    std::atomic<int> m_depthW{0};
+    std::atomic<int> m_depthH{0};
+
+    // Панель статуса (живые данные потока и трекинга)
+    std::shared_ptr<Text> m_cameraText;
+    std::shared_ptr<Text> m_poseText;
+    std::shared_ptr<Text> m_imuText;
+    std::shared_ptr<Text> m_connectionText;
+    std::chrono::steady_clock::time_point m_hudUpdate{};
+    void updateHud();
     std::atomic<bool> m_depthRunning{false};
 };
 

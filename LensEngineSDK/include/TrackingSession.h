@@ -80,6 +80,7 @@ public:
 
 private:
     glm::dquat deviceFromEye() const;
+    void updateMount(const glm::dvec3& accel);
 
     Options m_options;
     HeadTracker m_head;
@@ -89,6 +90,11 @@ private:
     std::atomic<int64_t> m_lastImuT{0};
     glm::dvec3 m_mountAccelSum{0.0};
     int m_mountCount = 0;
+    // Слежение за креплением после старта (телефон перевернули / вставили в шлем)
+    glm::dvec3 m_gravityLp{0.0};
+    int m_mountFlipCount = 0;
+    int m_portraitCount = 0;
+    bool m_portraitWarned = false;
 };
 
 } // namespace LensEngine
