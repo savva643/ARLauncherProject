@@ -31,11 +31,15 @@ void HeadTracker::reset()
     m_biasInt = glm::dvec3(0.0);
     m_omega = m_omegaPrev = glm::dvec3(0.0);
     m_stillSec = 0;
+    m_gyroMean = glm::dvec3(0.0);
+    m_gyroJitter2 = 1e-4;
     m_recenterPending = true;
     m_history.clear();
     m_initAccelSum = glm::dvec3(0.0);
     m_initCount = 0;
-    m_vioValid = false;
+    m_posValid = false;
+    m_fixT = 0;
+    m_pos = m_vel = m_posOrigin = glm::dvec3(0.0);
     m_vioYawOffsetInit = false;
 }
 
@@ -81,7 +85,15 @@ void HeadTracker::applyRecenterLocked()
     const glm::dquat fix = glm::angleAxis(kPi / 2 - yaw, glm::dvec3(0, 0, 1));
     m_q = glm::normalize(fix * m_q);
     for (auto& e : m_history) e.q = glm::normalize(fix * e.q);
-    m_vioYawOffsetInit = false;
+    // Мир повернулся: смещение рысканья внешнего трекера поворачиваем вместе с ним,
+    // а текущую позицию делаем нулём (объекты снова перед глазами)
+    m_vioYawOffset = wrapPi(m_vioYawOffset + (kPi / 2 - yaw));
+    m_vel = fix * m_vel;
+    if (m_posValid) {
+        m_posOrigin = fix * (m_pos + m_posOrigin);
+        for (auto& e : m_history) e.p = glm::dvec3(0.0);
+        m_pos = glm::dvec3(0.0);
+    }
 }
 
 void HeadTracker::recenter()
@@ -102,12 +114,13 @@ void HeadTracker::addImu(int64_t tNs, const glm::dvec3& gyro, const glm::dvec3& 
         if (++m_initCount < 20) return;
         initFromAccel(m_initAccelSum / double(m_initCount));
         m_initialized = true;
+        m_gyroMean = gyro;
         m_lastT = tNs;
         if (m_recenterPending) {
             applyRecenterLocked();
             m_recenterPending = false;
         }
-        m_history.push_back({tNs, m_q, glm::dvec3(0.0)});
+        m_history.push_back({tNs, m_q, glm::dvec3(0.0), m_pos});
         return;
     }
 
@@ -120,8 +133,15 @@ void HeadTracker::addImu(int64_t tNs, const glm::dvec3& gyro, const glm::dvec3& 
 
     // --- оценка bias в покое (единственный способ поймать bias по оси рысканья без камеры)
     const double accelNorm = hasAccel ? glm::length(accel) : kGravity;
-    const bool calm = std::fabs(accelNorm - kGravity) < 0.25;
-    if (glm::length(omega) < m_cfg.stillGyroThreshold && calm) {
+    // Покой — когда гироскоп показывает только шум: скорость почти постоянна (разброс мал) и невелика.
+    // Медленный плавный поворот головы (1-2°/с) тоже «мал», но его скорость меняется — разброс выдаёт.
+    // Идём (позиция от LiDAR меняется) — тоже не покой.
+    m_gyroMean += 0.1 * (gyro - m_gyroMean);
+    const glm::dvec3 dev = gyro - m_gyroMean;
+    m_gyroJitter2 += 0.1 * (glm::dot(dev, dev) - m_gyroJitter2);
+    const bool calm = std::fabs(accelNorm - kGravity) < 0.25 && (!m_posValid || glm::length(m_vel) < 0.08) &&
+                      tNs > m_fixMovingUntil;
+    if (glm::length(omega) < m_cfg.stillGyroThreshold && std::sqrt(m_gyroJitter2) < m_cfg.stillGyroJitter && calm) {
         m_stillSec += dt;
         if (m_stillSec > m_cfg.stillTimeSec) {
             m_bias += m_cfg.stillBiasAlpha * (gyro - m_bias);
@@ -145,7 +165,23 @@ void HeadTracker::addImu(int64_t tNs, const glm::dvec3& gyro, const glm::dvec3& 
     m_omegaPrev = m_omega;
     m_omega = omega;
 
-    m_history.push_back({tNs, m_q, omega});
+    // Позиция между позами LiDAR/VIO: интегрируем ускорение в мире (без гравитации).
+    // Без поз дольше 0.4 с — держим позицию (двойной интеграл акселерометра быстро «уплывает»).
+    if (m_posValid) {
+        if (tNs - m_fixT < 400'000'000LL) {
+            if (hasAccel) {
+                const glm::dvec3 aWorld = m_q * accel - glm::dvec3(0.0, 0.0, kGravity);
+                m_pos += m_vel * dt + 0.5 * aWorld * dt * dt;
+                m_vel += aWorld * dt;
+            } else {
+                m_pos += m_vel * dt;
+            }
+        } else {
+            m_vel = glm::dvec3(0.0);
+        }
+    }
+
+    m_history.push_back({tNs, m_q, omega, m_pos});
     while (m_history.size() > m_cfg.historySize) m_history.pop_front();
 }
 
@@ -188,11 +224,10 @@ HeadTracker::State HeadTracker::predict(int64_t tNs) const
     s.orientation = glm::normalize(m_q * expMap(omega, dt));
     s.angularVelocity = omega;
 
-    if (m_vioValid) {
-        const glm::dquat yawFix = glm::angleAxis(m_vioYawOffset, glm::dvec3(0, 0, 1));
-        const double dv = std::clamp(double(tNs - m_vioT) * 1e-9, 0.0, 0.1);
-        s.position = yawFix * (m_vioPos + m_vioVel * dv);
-        s.velocity = yawFix * m_vioVel;
+    if (m_posValid) {
+        const double dp = std::clamp(double(tNs - m_lastT) * 1e-9, 0.0, 0.05);
+        s.position = m_pos + m_vel * dp;
+        s.velocity = m_vel;
         s.hasPosition = true;
     }
     return s;
@@ -208,8 +243,7 @@ HeadTracker::State HeadTracker::latest() const
     return predict(t);
 }
 
-void HeadTracker::addVioPose(int64_t tNs, const glm::dquat& orientation, const glm::dvec3& position,
-                             const glm::dvec3& velocity)
+void HeadTracker::addPoseFix(int64_t tNs, const glm::dquat& orientation, const glm::dvec3& position)
 {
     glm::dquat ours;
     if (!orientationAt(tNs, ours)) return;
@@ -220,18 +254,82 @@ void HeadTracker::addVioPose(int64_t tNs, const glm::dquat& orientation, const g
         m_vioYawOffset = offset;
         m_vioYawOffsetInit = true;
     } else {
-        // Медленно подтягиваем смещение рысканья (VIO не дрейфует по рысканью так, как гироскоп)
-        const double delta = wrapPi(offset - m_vioYawOffset);
-        m_vioYawOffset = wrapPi(m_vioYawOffset + 0.05 * delta);
-        // Остаточный дрейф нашего фильтра убираем поворотом всей ориентации по Z мира
-        const double drift = wrapPi(yawOf(ours) - (yawOf(orientation) + m_vioYawOffset));
-        const glm::dquat fix = glm::angleAxis(-0.02 * drift, glm::dvec3(0, 0, 1));
-        m_q = glm::normalize(fix * m_q);
+        // Внешний трекер не дрейфует по рысканью (LiDAR совмещается со стенами комнаты),
+        // а гироскоп — дрейфует. Плавно (τ ≈ 0.3 с) возвращаем наше рысканье к его.
+        const double drift = wrapPi(offset - m_vioYawOffset);
+        if (std::fabs(drift) < 0.5) {
+            const glm::dquat fix = glm::angleAxis(-0.1 * drift, glm::dvec3(0, 0, 1));
+            m_q = glm::normalize(fix * m_q);
+        } else {
+            m_vioYawOffset = offset;   // большое расхождение — трекер перезапустился, берём его заново
+        }
     }
-    m_vioPos = position;
-    m_vioVel = velocity;
-    m_vioT = tNs;
-    m_vioValid = true;
+
+    // Внешний трекер видит поворот (даже медленный, который гироскоп не отличит от bias) — это не покой
+    if (m_fixT != 0 && tNs > m_fixT) {
+        const double dt = double(tNs - m_fixT) * 1e-9;
+        const double angle = 2.0 * std::acos(std::min(1.0, std::fabs(glm::dot(m_lastFixQ, orientation))));
+        if (dt < 0.5 && angle / dt > 0.01) m_fixMovingUntil = tNs + 300'000'000LL;
+    }
+    m_lastFixQ = orientation;
+
+    const glm::dvec3 measured = glm::angleAxis(m_vioYawOffset, glm::dvec3(0, 0, 1)) * position - m_posOrigin;
+    if (!m_posValid || tNs - m_fixT > 1'000'000'000LL) {
+        m_pos = measured;
+        m_vel = glm::dvec3(0.0);
+        m_posValid = true;
+    } else {
+        // Поза пришла с задержкой: сравниваем с нашей позицией на её момент, поправку — в текущее состояние
+        glm::dvec3 then = m_pos;
+        if (!m_history.empty() && tNs >= m_history.front().tNs && tNs <= m_history.back().tNs) {
+            auto it = std::lower_bound(m_history.begin(), m_history.end(), tNs,
+                                       [](const Entry& e, int64_t t) { return e.tNs < t; });
+            then = it->p;
+        }
+        const glm::dvec3 e = measured - then;
+        if (glm::length(e) > 0.5) {
+            m_pos += e;                 // скачок (вернулись в знакомое место после потери) — без «пролёта»
+            m_vel = glm::dvec3(0.0);
+            for (auto& h : m_history) h.p += e;
+        } else {
+            m_pos += 0.35 * e;
+            m_vel += 2.5 * e;
+            for (auto& h : m_history) h.p += 0.35 * e;
+        }
+    }
+    m_fixT = tNs;
+}
+
+glm::dvec3 HeadTracker::fixToWorld(const glm::dvec3& p) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return glm::angleAxis(m_vioYawOffset, glm::dvec3(0, 0, 1)) * p - m_posOrigin;
+}
+
+bool HeadTracker::positionAt(int64_t tNs, glm::dvec3& out) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (!m_posValid || m_history.empty() || tNs < m_history.front().tNs) return false;
+    if (tNs >= m_history.back().tNs) {
+        out = m_pos + m_vel * std::min(double(tNs - m_history.back().tNs) * 1e-9, 0.05);
+        return true;
+    }
+    auto it = std::lower_bound(m_history.begin(), m_history.end(), tNs,
+                               [](const Entry& e, int64_t t) { return e.tNs < t; });
+    out = it->p;
+    return true;
+}
+
+glm::dvec3 HeadTracker::worldToFixDirection(const glm::dvec3& v) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return glm::angleAxis(-m_vioYawOffset, glm::dvec3(0, 0, 1)) * v;
+}
+
+bool HeadTracker::hasFixFrame() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_vioYawOffsetInit;
 }
 
 glm::dvec3 HeadTracker::gyroBias() const

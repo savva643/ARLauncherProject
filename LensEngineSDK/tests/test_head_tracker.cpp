@@ -87,7 +87,21 @@ int main()
     std::printf("prediction +30ms max error: %.3f deg\n", maxPredErr);
     std::printf("gyro bias estimate: (%.4f %.4f %.4f), error %.4f rad/s\n", b.x, b.y, b.z, biasErr);
 
-    const bool ok = maxErrMoving < 1.5 && maxPredErr < 2.0 && biasErr < 0.004;
+    // Медленное осматривание (как в симуляторе комнаты): в точках разворота скорость головы несколько
+    // секунд меньше 2°/с — это не покой, и bias не должен «уезжать» (раньше уезжал до 2°/с)
+    HeadTracker slow;
+    for (int i = 0; i < 40 * 100; ++i) {
+        const double t = i * 0.01;
+        const double tm = std::max(0.0, t - 2.0);
+        const double yawRate = (t < 2.0) ? 0.0 : glm::radians(25.0) * 2 * kPi * 0.07 * std::cos(2 * kPi * 0.07 * tm);
+        const double pitchRate = (t < 2.0) ? 0.0 : glm::radians(10.0) * 2 * kPi * 0.05 * std::cos(2 * kPi * 0.05 * tm);
+        const glm::dvec3 gyro = glm::dvec3(pitchRate, 0.0, yawRate) + bias + glm::dvec3(gN(rng), gN(rng), gN(rng));
+        slow.addImu(t0 + int64_t(t * 1e9), gyro, glm::dvec3(0, 0, 9.80665) + glm::dvec3(aN(rng), aN(rng), aN(rng)), true);
+    }
+    const double slowBiasErr = glm::length(slow.gyroBias() - bias);
+    std::printf("slow head turn: bias error %.4f rad/s (must stay small)\n", slowBiasErr);
+
+    const bool ok = maxErrMoving < 1.5 && maxPredErr < 2.0 && biasErr < 0.004 && slowBiasErr < 0.004;
     std::printf("%s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

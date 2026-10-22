@@ -162,6 +162,25 @@ std::vector<uint32_t> Scene::getVisibleMeshIds() const
     return meshIds;
 }
 
+void Scene::setFloorHeight(float y)
+{
+    for (auto& obj : m_objects) {
+        if (!obj.onFloor) continue;
+        obj.position.y = y + 0.5f * obj.scale.y;   // меши единичные: от -0.5 до 0.5
+        obj.visible = true;
+    }
+}
+
+std::vector<const SceneObject*> Scene::getVisibleObjects() const
+{
+    std::vector<const SceneObject*> out;
+    out.reserve(m_objects.size());
+    for (const auto& obj : m_objects) {
+        if (obj.visible) out.push_back(&obj);
+    }
+    return out;
+}
+
 void Scene::createDemoScene(Renderer* renderer)
 {
     if (!renderer) {
@@ -381,7 +400,61 @@ void Scene::createDemoScene(Renderer* renderer)
     torus.visible = true;
     torus.meshId = m_torusMeshId;
     addObject(torus);
-    
+
+    // Дальние объекты — проверка окклюзии: в настоящей комнате они могут оказаться за стеной/шкафом,
+    // и тогда LiDAR их прячет; обошли препятствие — снова видны
+    SceneObject farSphere;
+    farSphere.position = glm::vec3(0.0f, 0.0f, -2.2f);
+    farSphere.scale = glm::vec3(0.25f);
+    farSphere.meshId = m_sphereMeshId;
+    addObject(farSphere);
+    SceneObject farCube;
+    farCube.position = glm::vec3(0.6f, -0.3f, -1.8f);
+    farCube.scale = glm::vec3(0.2f);
+    farCube.meshId = m_cubeMeshId;
+    addObject(farCube);
+
+    // На полу (появятся, когда LiDAR найдёт пол): хромовый шар перед перегородкой/мебелью
+    // и куб подальше — за препятствием его не видно, пока не обойдёшь
+    SceneObject floorSphere;
+    floorSphere.position = glm::vec3(-0.5f, 0.0f, -2.6f);
+    floorSphere.scale = glm::vec3(0.3f);
+    floorSphere.meshId = m_sphereMeshId;
+    floorSphere.onFloor = true;
+    floorSphere.visible = false;
+    addObject(floorSphere);
+    SceneObject floorCube;
+    floorCube.position = glm::vec3(0.3f, 0.0f, -2.3f);
+    floorCube.scale = glm::vec3(0.35f);
+    floorCube.meshId = m_cubeMeshId;
+    floorCube.onFloor = true;
+    floorCube.visible = false;
+    addObject(floorCube);
+
+    // Материалы: кубы — краска разных цветов, сферы — хром и золото (отражают комнату), тор — глянцевый
+    const glm::vec4 paints[] = {{0.93f, 0.33f, 0.25f, 1.0f}, {0.25f, 0.70f, 0.95f, 1.0f}, {0.35f, 0.85f, 0.45f, 1.0f},
+                                {0.98f, 0.80f, 0.25f, 1.0f}, {0.70f, 0.45f, 0.95f, 1.0f}, {0.95f, 0.95f, 0.95f, 1.0f},
+                                {0.20f, 0.20f, 0.22f, 1.0f}, {0.95f, 0.55f, 0.20f, 1.0f}};
+    int cubeIndex = 0, sphereIndex = 0;
+    for (auto& obj : m_objects) {
+        if (obj.meshId == m_cubeMeshId) {
+            obj.color = paints[cubeIndex++ % 8];
+            obj.metallic = 0.0f;
+            obj.roughness = 0.45f;
+        } else if (obj.meshId == m_sphereMeshId) {
+            const int k = sphereIndex++ % 3;
+            obj.color = k == 0 ? glm::vec4(0.95f, 0.95f, 0.97f, 1.0f)      // хром
+                      : k == 1 ? glm::vec4(1.0f, 0.78f, 0.34f, 1.0f)       // золото
+                               : glm::vec4(0.9f, 0.9f, 0.92f, 1.0f);       // полированный металл
+            obj.metallic = 1.0f;
+            obj.roughness = k == 2 ? 0.25f : 0.08f;
+        } else if (obj.meshId == m_torusMeshId) {
+            obj.color = glm::vec4(0.85f, 0.12f, 0.18f, 1.0f);
+            obj.metallic = 0.0f;
+            obj.roughness = 0.15f;
+        }
+    }
+
     std::cout << "[OK] Demo scene created: " << m_objects.size() << " objects" << std::endl;
 }
 

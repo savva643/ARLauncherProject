@@ -5,7 +5,10 @@
 // Видео отправляется с искусственной задержкой, как с реального телефона, — так видно, что
 // репроекция в лаунчере держит мир на месте несмотря на задержку видео.
 //
-//   stream_simulator [host] [port] [--seconds N] [--latency-ms 45] [--size 1280x960] [--fps 60] [--hevc] [--depth]
+//   stream_simulator [host] [port] [--seconds N] [--latency-ms 45] [--size 1280x960] [--fps 60] [--hevc] [--depth] [--room]
+//
+// --room: вместо сферы-сетки — комната 5x6 м с перегородкой, столом и шкафом; «голова» ходит по комнате
+// (позиция меняется), LiDAR согласован с видео. Так проверяются позиция по LiDAR, окклюзия и тени.
 
 #include "SensorStream/Protocol.h"
 #include "SensorStream/Types.h"
@@ -71,11 +74,13 @@ Mat3 rotX(double a) { double c = std::cos(a), s = std::sin(a); return {{{1, 0, 0
 
 // Мир: Z вверх (как CoreMotion), смотрим вперёд по +Y.
 // Телефон в шлеме горизонтально: ось x устройства вверх, экран к лицу (z назад), камера вперёд (-z).
+bool g_room = false;   // --room: взгляд чуть вниз (видно пол и тени), повороты медленнее
+
 Mat3 deviceOrientation(double t)
 {
     const Mat3 r0 = {{{0, -1, 0}, {0, 0, -1}, {1, 0, 0}}};   // столбцы: x_d=(0,0,1), y_d=(-1,0,0), z_d=(0,-1,0)
-    const double yaw = 35.0 * kPi / 180.0 * std::sin(2 * kPi * 0.20 * t);
-    const double pitch = 12.0 * kPi / 180.0 * std::sin(2 * kPi * 0.13 * t);
+    const double yaw = (g_room ? 25.0 * std::sin(2 * kPi * 0.07 * t) : 35.0 * std::sin(2 * kPi * 0.20 * t)) * kPi / 180.0;
+    const double pitch = (g_room ? -22.0 + 14.0 * std::sin(2 * kPi * 0.05 * t) : 12.0 * std::sin(2 * kPi * 0.13 * t)) * kPi / 180.0;
     return rotZ(yaw) * rotX(pitch) * r0;
 }
 
@@ -87,6 +92,125 @@ void bodyRate(double t, double out[3])
     out[0] = (m.m[2][1] - m.m[1][2]) / (4 * dt);
     out[1] = (m.m[0][2] - m.m[2][0]) / (4 * dt);
     out[2] = (m.m[1][0] - m.m[0][1]) / (4 * dt);
+}
+
+// ---------------- комната (режим --room) ----------------
+struct Box {
+    double lo[3], hi[3];
+    uint8_t y, u, v;     // цвет поверхности (YUV full range)
+};
+// Мир: Z вверх, пол z = 0. Старт головы — (0, -0.5, 1.55), взгляд по +Y.
+const Box kRoom{{-2.5, -2.0, 0.0}, {2.5, 4.0, 2.6}, 0, 0, 0};
+const Box kSolids[] = {
+    {{-0.3, 1.0, 0.0}, {0.9, 1.25, 2.0}, 170, 105, 165},     // перегородка (терракота)
+    {{-1.6, 1.5, 0.0}, {-0.8, 2.3, 0.75}, 95, 115, 150},     // стол (дерево)
+    {{1.6, -1.5, 0.0}, {2.5, -0.9, 1.9}, 120, 150, 110},     // шкаф (серо-синий)
+    {{-2.5, -0.5, 0.0}, {-2.1, 0.7, 1.1}, 140, 128, 128},    // комод
+};
+const double kLampPos[3] = {0.2, 1.8, 2.59};
+
+bool slab(double o, double d, double lo, double hi, double& tmin, double& tmax, int axis, int& enterAxis, int& exitAxis)
+{
+    if (std::fabs(d) < 1e-12) return o >= lo && o <= hi;
+    double t0 = (lo - o) / d, t1 = (hi - o) / d;
+    if (t0 > t1) std::swap(t0, t1);
+    if (t0 > tmin) { tmin = t0; enterAxis = axis; }
+    if (t1 < tmax) { tmax = t1; exitAxis = axis; }
+    return tmin <= tmax;
+}
+
+struct Hit {
+    double t = 1e9;
+    int box = -1;      // -1 — стены комнаты
+    int axis = 2;      // ось нормали
+};
+
+Hit raycastRoom(const double o[3], const double d[3])
+{
+    Hit h;
+    {
+        double tmin = -1e9, tmax = 1e9;
+        int ea = 0, xa = 0;
+        bool ok = true;
+        for (int a = 0; a < 3 && ok; ++a) ok = slab(o[a], d[a], kRoom.lo[a], kRoom.hi[a], tmin, tmax, a, ea, xa);
+        if (ok && tmax > 0) { h.t = tmax; h.axis = xa; }
+    }
+    for (int b = 0; b < int(sizeof(kSolids) / sizeof(kSolids[0])); ++b) {
+        double tmin = 0.0, tmax = 1e9;
+        int ea = 0, xa = 0;
+        bool ok = true;
+        for (int a = 0; a < 3 && ok; ++a) ok = slab(o[a], d[a], kSolids[b].lo[a], kSolids[b].hi[a], tmin, tmax, a, ea, xa);
+        if (ok && tmin > 1e-6 && tmin < h.t) { h.t = tmin; h.box = b; h.axis = ea; }
+    }
+    return h;
+}
+
+// Цвет точки комнаты: материал + простое освещение от лампы на потолке
+void shadeRoom(const double o[3], const double d[3], const Hit& h, uint8_t& Y, uint8_t& U, uint8_t& V)
+{
+    const double p[3] = {o[0] + d[0] * h.t, o[1] + d[1] * h.t, o[2] + d[2] * h.t};
+    double base = 150;
+    int u = 128, v = 128;
+    if (h.box == 0 && h.axis == 1 && p[1] < 1.001) {
+        // Метка ArUco DICT_4X4_50 id 3 (30 см) на перегородке: проверка якорей (ARL_MARKER_SIZE_CM=30)
+        static const char* kMarker[6] = {"000000", "010010", "010010", "001000", "001100", "000000"};
+        const double x0 = 0.30, zTop = 1.50, cell = 0.05;
+        const double mx = (p[0] - x0) / cell, mz = (zTop - p[2]) / cell;
+        if (mx >= -1 && mx < 7 && mz >= -1 && mz < 7) {
+            const bool inside = mx >= 0 && mx < 6 && mz >= 0 && mz < 6;
+            const bool white = !inside || kMarker[int(mz)][int(mx)] == '1';
+            Y = white ? 235 : 20;
+            U = V = 128;
+            return;
+        }
+    }
+    if (h.box >= 0) {
+        base = kSolids[h.box].y;
+        u = kSolids[h.box].u;
+        v = kSolids[h.box].v;
+    } else if (h.axis == 2 && p[2] < 0.01) {
+        // пол: доски
+        const bool plank = int(std::floor(p[0] / 0.2)) & 1;
+        const double grain = 8.0 * std::sin(p[1] * 9.0 + p[0] * 3.0);
+        base = (plank ? 118 : 104) + grain;
+        u = 112;
+        v = 150;
+    } else if (h.axis == 2) {
+        // потолок + лампа (квадрат 40 см)
+        if (std::fabs(p[0] - kLampPos[0]) < 0.2 && std::fabs(p[1] - kLampPos[1]) < 0.2) {
+            Y = 254; U = 124; V = 132;
+            return;
+        }
+        base = 205;
+    } else {
+        // стены: светлая штукатурка + плинтус + картина на дальней стене
+        base = p[2] < 0.1 ? 90 : 185;
+        u = 122;
+        v = 134;
+        if (h.axis == 1 && p[1] > 3.99 && std::fabs(p[0] - 0.5) < 0.6 && std::fabs(p[2] - 1.5) < 0.4) {
+            base = 80; u = 160; v = 100;   // синяя картина
+        }
+        // текстура для глаз (и для VIO)
+        base += 10.0 * std::sin(p[0] * 13.0 + p[2] * 7.0) * std::sin(p[1] * 11.0 - p[2] * 5.0);
+    }
+    // освещение: лампа сверху (косинус к нормали + затухание) + рассеянный свет
+    double n[3] = {0, 0, 0};
+    n[h.axis] = (h.box >= 0) ? (d[h.axis] > 0 ? -1 : 1) : (d[h.axis] > 0 ? -1 : 1);
+    double l[3] = {kLampPos[0] - p[0], kLampPos[1] - p[1], kLampPos[2] - p[2]};
+    const double dist = std::sqrt(l[0] * l[0] + l[1] * l[1] + l[2] * l[2]);
+    const double ndl = std::max(0.0, (n[0] * l[0] + n[1] * l[1] + n[2] * l[2]) / dist);
+    const double light = 0.55 + 0.75 * ndl / (0.4 + 0.15 * dist * dist);
+    Y = uint8_t(std::clamp(base * light, 0.0, 250.0));
+    U = uint8_t(u);
+    V = uint8_t(v);
+}
+
+double roomPos(double t, int axis)
+{
+    // Шаги по комнате: влево-вправо 0.7 м (20 с), вперёд-назад 0.6 м (40 с), лёгкое покачивание
+    if (axis == 0) return 0.7 * std::sin(2 * kPi * t / 20.0);
+    if (axis == 1) return -0.5 + 0.3 * (1.0 - std::cos(2 * kPi * t / 40.0));
+    return 1.55 + 0.02 * std::sin(2 * kPi * 0.5 * t);
 }
 
 int64_t phoneNow() { return pcNowNs() + kPhoneClockOffsetNs; }
@@ -148,6 +272,7 @@ int main(int argc, char** argv)
     int width = 1280, height = 960, fps = 60;
     bool hevc = false;
     bool depth = false;
+    bool room = false;
 
     int positional = 0;
     for (int i = 1; i < argc; ++i) {
@@ -157,6 +282,7 @@ int main(int argc, char** argv)
         else if (a == "--fps" && i + 1 < argc) fps = std::stoi(argv[++i]);
         else if (a == "--hevc") hevc = true;
         else if (a == "--depth") depth = true;
+        else if (a == "--room") room = g_room = true;
         else if (a == "--size" && i + 1 < argc) std::sscanf(argv[++i], "%dx%d", &width, &height);
         else if (positional == 0) { host = a; ++positional; }
         else if (positional == 1) { port = uint16_t(std::stoi(a)); ++positional; }
@@ -240,7 +366,13 @@ int main(int argc, char** argv)
             double w[3];
             bodyRate(t, w);
             Mat3 r = deviceOrientation(t);
-            const double gWorld[3] = {0, 0, 9.80665};
+            double gWorld[3] = {0, 0, 9.80665};
+            if (room) {
+                // + ускорение головы (вторая производная позиции)
+                const double e = 1e-3;
+                for (int a = 0; a < 3; ++a)
+                    gWorld[a] += (roomPos(t + e, a) - 2 * roomPos(t, a) + roomPos(t - e, a)) / (e * e);
+            }
             double aDev[3];
             r.transposed().apply(gWorld, aDev);
             const int64_t tPhone = nextImu + kPhoneClockOffsetNs;
@@ -264,6 +396,25 @@ int main(int argc, char** argv)
     });
 
     const unsigned workers = std::max(2u, std::thread::hardware_concurrency());
+    auto renderRoomRows = [&](const Mat3& rwc, const double o[3], int v0, int v1) {
+        for (int v = v0; v < v1; ++v) {
+            uint8_t* yRow = frame->data[0] + size_t(v) * frame->linesize[0];
+            uint8_t* uRow = frame->data[1] + size_t(v / 2) * frame->linesize[1];
+            uint8_t* vRow = frame->data[2] + size_t(v / 2) * frame->linesize[2];
+            for (int u = 0; u < width; ++u) {
+                const double rc[3] = {(u - cx) / f, (v - cy) / f, 1.0};
+                double rw[3];
+                rwc.apply(rc, rw);
+                uint8_t Y, U, V;
+                shadeRoom(o, rw, raycastRoom(o, rw), Y, U, V);
+                yRow[u] = Y;
+                if (!(v & 1) && !(u & 1)) {
+                    uRow[u / 2] = U;
+                    vRow[u / 2] = V;
+                }
+            }
+        }
+    };
     auto renderRows = [&](const Mat3& rwc, int v0, int v1) {
         for (int v = v0; v < v1; ++v) {
             uint8_t* yRow = frame->data[0] + size_t(v) * frame->linesize[0];
@@ -300,7 +451,8 @@ int main(int argc, char** argv)
     std::thread depthThread([&] {
         if (!depth) return;
         const int dw = 256, dh = 192;
-        const float dfx = 211.0f, dcx = dw * 0.5f, dcy = dh * 0.5f;
+        // LiDAR выровнен с кадром камеры: те же интринсики в масштабе 256 по ширине
+        const float dfx = room ? float(f * dw / width) : 211.0f, dcx = dw * 0.5f, dcy = room ? float(cy * dw / width) : dh * 0.5f;
         int64_t next = start;
         while (ok && pcNowNs() < endNs) {
             std::vector<uint8_t> p(kDepthHeaderSize + size_t(dw) * dh * 2, 0);
@@ -312,14 +464,25 @@ int main(int argc, char** argv)
             wrF32(p.data() + 24, dcx);
             wrF32(p.data() + 28, dcy);
             uint8_t* d = p.data() + kDepthHeaderSize;
+            const double tSec = double(next - start) * 1e-9;
+            const Mat3 rdcD = {{{0, -1, 0}, {-1, 0, 0}, {0, 0, -1}}};
+            const Mat3 rwcD = deviceOrientation(tSec) * rdcD;
+            const double o[3] = {roomPos(tSec, 0), roomPos(tSec, 1), roomPos(tSec, 2)};
             for (int v = 0; v < dh; ++v)
                 for (int u = 0; u < dw; ++u) {
                     const float x = (u - dcx) / dfx, y = (v - dcy) / dfx;
-                    const float z = 2.5f / std::sqrt(1 + x * x + y * y);   // расстояние вдоль оси
+                    float z = 2.5f / std::sqrt(1 + x * x + y * y);   // расстояние вдоль оси
+                    if (room) {
+                        const double rc[3] = {x, y, 1.0};
+                        double rw[3];
+                        rwcD.apply(rc, rw);
+                        const Hit h = raycastRoom(o, rw);   // rc.z = 1 -> t и есть глубина по оси
+                        z = h.t < 6.0 ? float(h.t) : 0.0f;
+                    }
                     // float -> half (норм. числа в диапазоне 0.1..10 м)
                     uint32_t bits;
                     std::memcpy(&bits, &z, 4);
-                    const uint16_t half = uint16_t(((bits >> 16) & 0x8000) | ((((bits >> 23) & 0xFF) - 112) << 10) | ((bits >> 13) & 0x3FF));
+                    const uint16_t half = z <= 0.0f ? 0 : uint16_t(((bits >> 16) & 0x8000) | ((((bits >> 23) & 0xFF) - 112) << 10) | ((bits >> 13) & 0x3FF));
                     wrU16(d + 2 * (size_t(v) * dw + u), half);
                 }
             if (!net.send(PacketType::Depth, p)) { ok = false; break; }
@@ -347,8 +510,11 @@ int main(int argc, char** argv)
 
             std::vector<std::thread> pool;
             const int rowsPer = ((height + int(workers) - 1) / int(workers) + 1) & ~1;
-            for (int v0 = 0; v0 < height; v0 += rowsPer)
-                pool.emplace_back(renderRows, rwc, v0, std::min(height, v0 + rowsPer));
+            const double o[3] = {roomPos(t, 0), roomPos(t, 1), roomPos(t, 2)};
+            for (int v0 = 0; v0 < height; v0 += rowsPer) {
+                if (room) pool.emplace_back(renderRoomRows, rwc, o, v0, std::min(height, v0 + rowsPer));
+                else pool.emplace_back(renderRows, rwc, v0, std::min(height, v0 + rowsPer));
+            }
             for (auto& th : pool) th.join();
 
             frame->pts = nextFrame + kPhoneClockOffsetNs;

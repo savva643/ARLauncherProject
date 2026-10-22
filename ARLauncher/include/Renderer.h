@@ -157,6 +157,34 @@ public:
     /// Область вывода для passthrough и 3D (стерео side-by-side). width<=0 — весь экран.
     void setEyeViewport(float x, float y, float width, float height);
 
+    // ---- 3D-объекты в реальной комнате: окклюзия по LiDAR, свет и отражения по камере, тени на пол
+    struct ObjectMaterial {
+        glm::vec4 color{0.2f, 0.7f, 1.0f, 1.0f};   // sRGB + альфа
+        float metallic = 0.0f;
+        float roughness = 0.5f;
+    };
+    struct SceneParams {
+        glm::mat3 cvFromEye{1.0f};                            // как у passthrough: луч глаза -> пиксель видео/LiDAR
+        glm::vec4 camIntrinsicsNorm{1.0f, 1.0f, 0.5f, 0.5f};
+        bool fullRange = true;
+        bool bt709 = true;
+        bool occlusion = true;            // реальные предметы закрывают виртуальные (нужна карта LiDAR)
+        float occlusionSoftness = 0.03f;  // м — мягкий край окклюзии
+        bool reflections = true;
+        bool shadows = true;
+        bool floorValid = false;
+        float floorY = -1.5f;             // пол в мире рендера
+        glm::vec3 lightDirWorld{0.3f, 0.9f, 0.3f};   // к источнику
+        glm::vec3 lightColor{0.6f};       // линейный RGB (блики)
+        float shadowStrength = 0.45f;
+        std::array<glm::vec3, 9> sh{};    // SH окружения в мире (линейный RGB); все нули — нейтральный свет
+        float opacity = 1.0f;
+    };
+    void setSceneParams(const SceneParams& params) { m_sceneParams = params; }
+    void setObjectMaterials(std::vector<ObjectMaterial> materials) { m_materials = std::move(materials); }
+    /// Карта окружения equirect RGBA8 (EnvironmentProbe) — только до render pass (latch)
+    void uploadEnvironmentMap(const uint8_t* rgba, uint32_t width, uint32_t height, uint64_t version);
+
     VkExtent2D swapchainExtent() const { return m_swapchainExtent; }
     const char* presentModeName() const;
     VkPresentModeKHR presentMode() const { return m_presentMode; }
@@ -221,6 +249,33 @@ private:
     void uploadDepthHalf(const uint16_t* half, uint32_t width, uint32_t height);
     bool createPlaneImage(PlaneImage& plane, VkFormat format, uint32_t width, uint32_t height);
     void destroyPlaneImage(PlaneImage& plane);
+
+    // Сцена: set 1 = UBO кадра + карта окружения; set 0 общий с passthrough (Y, CbCr, LiDAR)
+    SceneParams m_sceneParams;
+    std::vector<ObjectMaterial> m_materials;
+    VkDescriptorSetLayout m_sceneSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_scenePool = VK_NULL_HANDLE;
+    std::array<VkDescriptorSet, kFramesInFlight> m_sceneSets{};
+    std::array<VkBuffer, kFramesInFlight> m_sceneUbo{};
+    std::array<VkDeviceMemory, kFramesInFlight> m_sceneUboMemory{};
+    std::array<void*, kFramesInFlight> m_sceneUboPtr{};
+    PlaneImage m_env;
+    uint32_t m_envW = 0;
+    uint32_t m_envH = 0;
+    VkSampler m_envSampler = VK_NULL_HANDLE;
+    std::array<VkBuffer, kFramesInFlight> m_envStaging{};
+    std::array<VkDeviceMemory, kFramesInFlight> m_envStagingMemory{};
+    std::array<void*, kFramesInFlight> m_envStagingPtr{};
+    bool m_envLayoutReady = false;
+    bool m_envReal = false;
+    uint64_t m_envVersion = 0;
+    VkPipeline m_shadowPipeline = VK_NULL_HANDLE;
+    uint64_t m_frameNumber = 0;
+    uint64_t m_sceneUboFrame = UINT64_MAX;
+    bool createSceneResources();
+    void destroySceneResources();
+    void ensureSceneInputs();       // заглушки видео/LiDAR/карты, чтобы дескрипторы были валидны с первого кадра
+    void writeSceneUbo();
 
     glm::mat4 m_viewMatrix;
     glm::mat4 m_projectionMatrix;

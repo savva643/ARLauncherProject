@@ -10,6 +10,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
@@ -20,11 +21,14 @@ struct GLFWwindow;
 namespace LensEngine {
     class LensEngineAPI;
     class TrackingSession;
+    class EnvironmentProbe;
+    class MarkerTracker;
 }
 
 namespace sensorstream {
     class StreamReceiver;
     struct DepthFrame;
+    struct VideoFrame;
 }
 
 class Button;
@@ -35,6 +39,7 @@ class UIRenderer;
 class ARLauncherAPI;
 class FontRenderer;
 class LiDARVisualizer;
+class AudioEngine;
 
 /**
  * @brief Главный класс приложения ARLauncher (GlaskiOS)
@@ -97,6 +102,30 @@ private:
     // Новый конвейер сенсоров
     std::unique_ptr<sensorstream::StreamReceiver> m_stream;
     std::unique_ptr<LensEngine::TrackingSession> m_tracking;
+    std::unique_ptr<LensEngine::EnvironmentProbe> m_envProbe;   // свет и отражения по видео
+    std::unique_ptr<LensEngine::MarkerTracker> m_markers;      // метки ArUco -> якоря в мире
+    std::vector<uint8_t> m_envTexture;
+    bool m_markersEnabled = true;     // ARL_MARKERS
+    // Зрение (свет комнаты, метки) — отдельный поток, ~10 Гц: декодер видео не ждёт
+    std::thread m_visionThread;
+    std::mutex m_visionMutex;
+    std::condition_variable m_visionCv;
+    std::shared_ptr<const sensorstream::VideoFrame> m_visionFrame;
+    std::atomic<bool> m_visionRunning{false};
+    std::atomic<int> m_markersInView{0};
+    void visionWorker();
+
+    // Пространственный звук (OpenAL HRTF): источники на объектах сцены, глушатся реальными стенами (LiDAR)
+    std::unique_ptr<AudioEngine> m_audio;
+    struct AudioSource {
+        int sourceId = -1;
+        size_t objectIndex = 0;
+        float occlusion = 0.0f;
+    };
+    std::vector<AudioSource> m_audioSources;
+    void initializeAudio();
+    void updateAudio();
+    float lidarOcclusion(const glm::vec3& worldPos);   // 1 — реальная поверхность ближе точки, 0 — нет, -1 — не видно
 
     bool m_running;
     bool m_initialized;
@@ -147,6 +176,11 @@ private:
     std::shared_ptr<sensorstream::DepthFrame> m_pendingDepth;
     std::shared_ptr<sensorstream::DepthFrame> m_overlayDepth;   // для наложения LiDAR в рендере (клавиша L)
     bool m_depthOverlay = false;
+    // Реализм 3D-объектов (клавиши K, H, E; переменные ARL_OCCLUSION / ARL_SHADOWS / ARL_LIGHTING)
+    bool m_occlusion = true;          // реальные предметы закрывают виртуальные (LiDAR)
+    bool m_shadows = true;            // тени объектов на реальный пол
+    bool m_lighting = true;           // свет и отражения по видео комнаты
+    int m_mountSetting = -1;          // M: -1 авто, 0/90/180/270
     std::atomic<int> m_depthW{0};
     std::atomic<int> m_depthH{0};
 

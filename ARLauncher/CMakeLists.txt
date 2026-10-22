@@ -139,6 +139,7 @@ set(ARLAUNCHER_SOURCES
     src/ARLauncherAPI.cpp
     src/FontRenderer.cpp
     src/LiDARVisualizer.cpp
+    src/AudioEngine.cpp
     ui/UIRenderer.cpp
     ui/UIElement.cpp
     ui/Window.cpp
@@ -156,6 +157,7 @@ set(ARLAUNCHER_HEADERS
     include/ARLauncherAPI.h
     include/FontRenderer.h
     include/LiDARVisualizer.h
+    include/AudioEngine.h
     ui/UIRenderer.h
     ui/UIElement.h
     ui/Window.h
@@ -251,6 +253,26 @@ else()
     )
 endif()
 
+# Пространственный звук: OpenAL Soft (HRTF). Без него лаунчер собирается, звук выключен.
+option(ARL_WITH_AUDIO "Spatial audio (OpenAL Soft, HRTF)" ON)
+if(ARL_WITH_AUDIO)
+    find_package(OpenAL QUIET)
+endif()
+if(ARL_WITH_AUDIO AND OPENAL_FOUND)
+    target_link_libraries(ARLauncher PRIVATE ${OPENAL_LIBRARY})
+    target_include_directories(ARLauncher PRIVATE ${OPENAL_INCLUDE_DIR}/..)
+    target_compile_definitions(ARLauncher PRIVATE USE_OPENAL)
+    message(STATUS "Spatial audio: OpenAL ${OPENAL_LIBRARY}")
+    # Проверка HRTF: источник слева/справа -> левый/правый канал (вывод в WAV, без звуковой карты)
+    add_executable(test_audio tests/test_audio.cpp src/AudioEngine.cpp)
+    target_include_directories(test_audio PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include ${OPENAL_INCLUDE_DIR}/..)
+    target_compile_definitions(test_audio PRIVATE USE_OPENAL)
+    target_link_libraries(test_audio PRIVATE ${OPENAL_LIBRARY})
+    set_target_properties(test_audio PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+else()
+    message(STATUS "Spatial audio: OFF (sudo apt install libopenal-dev)")
+endif()
+
 # Поток с iPhone принимает SensorStream (без Qt, в своих потоках).
 # Старый Qt SensorConnector (../SensorConnector) — LEGACY, лаунчером больше не используется.
 target_link_libraries(ARLauncher PRIVATE SensorStream)
@@ -277,7 +299,7 @@ if(USE_VULKAN AND Vulkan_FOUND)
             add_custom_command(
                 OUTPUT ${SPV}
                 COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER} -o ${SPV}
-                DEPENDS ${SHADER}
+                DEPENDS ${SHADER} ${CMAKE_CURRENT_SOURCE_DIR}/shaders_vk/scene_common.glsl
                 COMMENT "Compiling Vulkan shader ${FILE_NAME}"
             )
             list(APPEND VK_SHADER_SPV_OUTPUTS ${SPV})

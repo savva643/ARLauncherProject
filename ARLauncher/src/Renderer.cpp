@@ -1550,11 +1550,6 @@ bool VulkanRenderer::initialize(GLFWwindow* window)
         return false;
     }
 
-    if (!createGraphicsPipeline()) {
-        std::cerr << "Failed to create graphics pipeline" << std::endl;
-        return false;
-    }
-
     if (!createUIResources()) {
         std::cerr << "Failed to create Vulkan UI resources" << std::endl;
         return false;
@@ -1579,6 +1574,12 @@ bool VulkanRenderer::initialize(GLFWwindow* window)
         std::cerr << "Failed to create passthrough pipeline (shaders_vk/passthrough.*.spv?)" << std::endl;
         return false;
     }
+
+    // 3D-сцена использует набор дескрипторов passthrough (видео + LiDAR) — создаём после него
+    if (!createSceneResources() || !createGraphicsPipeline()) {
+        std::cerr << "Failed to create 3D scene pipeline (shaders_vk/mesh.*.spv?)" << std::endl;
+        return false;
+    }
     
     m_initialized = true;
     std::cout << "[OK] VulkanRenderer initialized successfully" << std::endl;
@@ -1601,6 +1602,7 @@ void VulkanRenderer::shutdown()
     }
 
     destroyUIResources();
+    destroySceneResources();
     destroyPassthrough();
 
     for (auto& tex : m_textures) {
@@ -1615,6 +1617,10 @@ void VulkanRenderer::shutdown()
     if (m_graphicsPipeline != VK_NULL_HANDLE) {
         vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
         m_graphicsPipeline = VK_NULL_HANDLE;
+    }
+    if (m_shadowPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_shadowPipeline, nullptr);
+        m_shadowPipeline = VK_NULL_HANDLE;
     }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
@@ -1725,8 +1731,10 @@ void VulkanRenderer::beginFrame()
     }
     m_frameActive = true;
 
+    ++m_frameNumber;
     // Late latching: поза и видеокадр берутся максимально близко к сабмиту
     if (m_preRenderPass) m_preRenderPass();
+    ensureSceneInputs();
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1852,38 +1860,88 @@ void VulkanRenderer::renderStoredVideoBackground()
     renderUITexturedQuad(placement, true);
 }
 
-void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms, 
+void VulkanRenderer::render3DObjects(const std::vector<glm::mat4>& transforms,
                                      const std::vector<uint32_t>& meshIds)
 {
     if (!m_initialized || transforms.empty() || meshIds.empty()) return;
     if (transforms.size() != meshIds.size()) return;
-    
     if (!m_frameActive) return;
-    VkCommandBuffer commandBuffer = currentCmd();
+    if (m_graphicsPipeline == VK_NULL_HANDLE || m_pipelineLayout == VK_NULL_HANDLE) return;
+    if (!m_ptLayoutReady || !m_ptDepthLayoutReady || !m_envLayoutReady) return;   // дескрипторы ещё не готовы
+    VkCommandBuffer cmd = currentCmd();
 
-    if (m_graphicsPipeline == VK_NULL_HANDLE || m_pipelineLayout == VK_NULL_HANDLE) {
-        return;
+    writeSceneUbo();
+    applyEyeViewport(cmd);
+    const std::array<VkDescriptorSet, 2> sets = {m_ptSet, m_sceneSets[m_frameSlot]};
+
+    struct Push {
+        glm::mat4 modelView;
+        glm::vec4 color;
+        glm::vec4 material;   // metallic, roughness, режим (0 объект, 1 тень), запас окклюзии (м)
+    };
+    static_assert(sizeof(Push) == 96, "push constants");
+    const ObjectMaterial defaultMaterial{};
+
+    // Тени на пол — до объектов: темним видео под объектом (blend MIN — перекрытия не темнеют дважды)
+    const SceneParams& sp = m_sceneParams;
+    if (sp.shadows && sp.floorValid && m_shadowPipeline != VK_NULL_HANDLE) {
+        glm::vec3 L = glm::normalize(sp.lightDirWorld);
+        if (L.y < 0.25f) {
+            L.y = 0.25f;
+            L = glm::normalize(L);
+        }
+        const float h = sp.floorY + 0.003f;
+        // Проекция на плоскость y = h вдоль L: P' = P - L * (P.y - h) / L.y
+        glm::mat4 S(1.0f);
+        S[1][0] = -L.x / L.y;
+        S[1][1] = 0.0f;
+        S[1][2] = -L.z / L.y;
+        S[3][0] = L.x / L.y * h;
+        S[3][1] = h;
+        S[3][2] = L.z / L.y * h;
+
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_shadowPipeline);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0,
+                                static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
+        for (size_t i = 0; i < transforms.size(); ++i) {
+            const uint32_t meshId = meshIds[i];
+            if (meshId == 0 || meshId > m_meshes.size()) continue;
+            const float height = transforms[i][3].y - sp.floorY;
+            if (height < 0.0f) continue;   // под полом
+            const VulkanMesh& mesh = m_meshes[meshId - 1];
+            VkDeviceSize offsets[] = {0};
+            vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, offsets);
+            vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            Push pc;
+            pc.modelView = m_viewMatrix * S * transforms[i];
+            // Чем выше объект над полом, тем тень слабее (свет в комнате не точечный)
+            pc.color = glm::vec4(0.0f, 0.0f, 0.0f, glm::clamp(1.0f - height / 3.0f, 0.35f, 1.0f) * sp.opacity * m_3dObjectsOpacity);
+            pc.material = glm::vec4(0.0f, 1.0f, 1.0f, 0.15f);   // на самом полу LiDAR видит тот же пол — запас 15 см
+            vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(Push), &pc);
+            vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
+        }
     }
 
-    applyEyeViewport(commandBuffer);
-
-    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
-
-    // Рендерим каждый объект
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 0,
+                            static_cast<uint32_t>(sets.size()), sets.data(), 0, nullptr);
     for (size_t i = 0; i < transforms.size(); i++) {
-        uint32_t meshId = meshIds[i];
+        const uint32_t meshId = meshIds[i];
         if (meshId == 0 || meshId > m_meshes.size()) continue;
-        
         const VulkanMesh& mesh = m_meshes[meshId - 1];
-
         VkDeviceSize offsets[] = {0};
-        vkCmdBindVertexBuffers(commandBuffer, 0, 1, &mesh.vertexBuffer, offsets);
-        vkCmdBindIndexBuffer(commandBuffer, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &mesh.vertexBuffer, offsets);
+        vkCmdBindIndexBuffer(cmd, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-        glm::mat4 mvp = m_projectionMatrix * m_viewMatrix * transforms[i];
-        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(glm::mat4), &mvp);
-
-        vkCmdDrawIndexed(commandBuffer, mesh.indexCount, 1, 0, 0, 0);
+        const ObjectMaterial& m = i < m_materials.size() ? m_materials[i] : defaultMaterial;
+        Push pc;
+        pc.modelView = m_viewMatrix * transforms[i];
+        pc.color = glm::vec4(glm::vec3(m.color), m.color.a * sp.opacity * m_3dObjectsOpacity);
+        pc.material = glm::vec4(m.metallic, m.roughness, 0.0f, 0.0f);
+        vkCmdPushConstants(cmd, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                           sizeof(Push), &pc);
+        vkCmdDrawIndexed(cmd, mesh.indexCount, 1, 0, 0, 0);
     }
 }
 
@@ -2081,9 +2139,16 @@ bool VulkanRenderer::createGraphicsPipeline()
     depthStencil.depthBoundsTestEnable = VK_FALSE;
     depthStencil.stencilTestEnable = VK_FALSE;
 
+    // Альфа: мягкий край окклюзии (реальный предмет перед виртуальным) и прозрачность сцены
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -2097,14 +2162,17 @@ bool VulkanRenderer::createGraphicsPipeline()
     dynamicState.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
     dynamicState.pDynamicStates = dynamicStates.data();
 
+    // modelView + цвет + материал = 96 байт (гарантированный минимум — 128)
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.size = sizeof(glm::mat4) + 2 * sizeof(glm::vec4);
 
+    const std::array<VkDescriptorSetLayout, 2> setLayouts = {m_ptSetLayout, m_sceneSetLayout};
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
+    pipelineLayoutInfo.setLayoutCount = static_cast<uint32_t>(setLayouts.size());
+    pipelineLayoutInfo.pSetLayouts = setLayouts.data();
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -2131,6 +2199,23 @@ bool VulkanRenderer::createGraphicsPipeline()
     pipelineInfo.subpass = 0;
 
     bool ok = (vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_graphicsPipeline) == VK_SUCCESS);
+
+    // Тени: тот же шейдер в режиме «тень»; глубину не пишут, перекрытия — MIN (не темнеют дважды)
+    VkPipelineDepthStencilStateCreateInfo shadowDepth = depthStencil;
+    shadowDepth.depthWriteEnable = VK_FALSE;
+    VkPipelineColorBlendAttachmentState shadowBlend = colorBlendAttachment;
+    shadowBlend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    shadowBlend.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+    shadowBlend.colorBlendOp = VK_BLEND_OP_MIN;
+    shadowBlend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    shadowBlend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    shadowBlend.alphaBlendOp = VK_BLEND_OP_MAX;
+    VkPipelineColorBlendStateCreateInfo shadowBlending = colorBlending;
+    shadowBlending.pAttachments = &shadowBlend;
+    VkGraphicsPipelineCreateInfo shadowInfo = pipelineInfo;
+    shadowInfo.pDepthStencilState = &shadowDepth;
+    shadowInfo.pColorBlendState = &shadowBlending;
+    ok = ok && vkCreateGraphicsPipelines(m_device, VK_NULL_HANDLE, 1, &shadowInfo, nullptr, &m_shadowPipeline) == VK_SUCCESS;
 
     vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
     vkDestroyShaderModule(m_device, vertShaderModule, nullptr);
@@ -3269,6 +3354,10 @@ void VulkanRenderer::recreateSwapchain()
         vkDestroyPipeline(m_device, m_graphicsPipeline, nullptr);
         m_graphicsPipeline = VK_NULL_HANDLE;
     }
+    if (m_shadowPipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(m_device, m_shadowPipeline, nullptr);
+        m_shadowPipeline = VK_NULL_HANDLE;
+    }
     if (m_pipelineLayout != VK_NULL_HANDLE) {
         vkDestroyPipelineLayout(m_device, m_pipelineLayout, nullptr);
         m_pipelineLayout = VK_NULL_HANDLE;
@@ -3994,4 +4083,237 @@ void VulkanRenderer::destroyPassthrough()
     m_ptHasFrame = false;
     m_ptWidth = m_ptHeight = 0;
 }
+
+// ---------------- 3D-сцена: UBO кадра, карта окружения, заглушки ----------------
+
+namespace {
+
+struct SceneUbo {
+    glm::mat4 proj;
+    glm::mat4 cvFromEye;
+    glm::mat4 worldFromEye;
+    glm::vec4 cam;
+    glm::vec4 lightDir;      // оси глаза; w = 1
+    glm::vec4 lightColor;    // w = сила тени
+    glm::vec4 sh[9];
+    glm::vec4 params;        // x флаги, y флаги видео, z мягкость окклюзии, w непрозрачность
+};
+
+constexpr uint32_t kEnvW = 128;
+constexpr uint32_t kEnvH = 64;
+
+} // namespace
+
+bool VulkanRenderer::createSceneResources()
+{
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+    if (vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_sceneSetLayout) != VK_SUCCESS) return false;
+
+    std::array<VkDescriptorPoolSize, 2> poolSizes = {
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, kFramesInFlight},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, kFramesInFlight}};
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = kFramesInFlight;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_scenePool) != VK_SUCCESS) return false;
+
+    std::array<VkDescriptorSetLayout, kFramesInFlight> layouts;
+    layouts.fill(m_sceneSetLayout);
+    VkDescriptorSetAllocateInfo alloc{};
+    alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    alloc.descriptorPool = m_scenePool;
+    alloc.descriptorSetCount = kFramesInFlight;
+    alloc.pSetLayouts = layouts.data();
+    if (vkAllocateDescriptorSets(m_device, &alloc, m_sceneSets.data()) != VK_SUCCESS) return false;
+
+    // Карта окружения: повтор по долготе, край по широте
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.maxLod = 0.0f;
+    if (vkCreateSampler(m_device, &samplerInfo, nullptr, &m_envSampler) != VK_SUCCESS) return false;
+    if (!createPlaneImage(m_env, VK_FORMAT_R8G8B8A8_UNORM, kEnvW, kEnvH)) return false;
+    m_envW = kEnvW;
+    m_envH = kEnvH;
+
+    const VkDeviceSize envBytes = VkDeviceSize(kEnvW) * kEnvH * 4;
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        if (!createBuffer(sizeof(SceneUbo), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          m_sceneUbo[i], m_sceneUboMemory[i]) ||
+            !createBuffer(envBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                          VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                          m_envStaging[i], m_envStagingMemory[i])) {
+            return false;
+        }
+        vkMapMemory(m_device, m_sceneUboMemory[i], 0, sizeof(SceneUbo), 0, &m_sceneUboPtr[i]);
+        vkMapMemory(m_device, m_envStagingMemory[i], 0, envBytes, 0, &m_envStagingPtr[i]);
+
+        VkDescriptorBufferInfo bufferInfo{m_sceneUbo[i], 0, sizeof(SceneUbo)};
+        VkDescriptorImageInfo imageInfo{m_envSampler, m_env.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+        std::array<VkWriteDescriptorSet, 2> writes{};
+        writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[0].dstSet = m_sceneSets[i];
+        writes[0].dstBinding = 0;
+        writes[0].descriptorCount = 1;
+        writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        writes[0].pBufferInfo = &bufferInfo;
+        writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[1].dstSet = m_sceneSets[i];
+        writes[1].dstBinding = 1;
+        writes[1].descriptorCount = 1;
+        writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[1].pImageInfo = &imageInfo;
+        vkUpdateDescriptorSets(m_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    }
+    return true;
+}
+
+void VulkanRenderer::destroySceneResources()
+{
+    if (m_device == VK_NULL_HANDLE) return;
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+        if (m_sceneUboPtr[i]) vkUnmapMemory(m_device, m_sceneUboMemory[i]);
+        if (m_sceneUbo[i] != VK_NULL_HANDLE) vkDestroyBuffer(m_device, m_sceneUbo[i], nullptr);
+        if (m_sceneUboMemory[i] != VK_NULL_HANDLE) vkFreeMemory(m_device, m_sceneUboMemory[i], nullptr);
+        if (m_envStagingPtr[i]) vkUnmapMemory(m_device, m_envStagingMemory[i]);
+        if (m_envStaging[i] != VK_NULL_HANDLE) vkDestroyBuffer(m_device, m_envStaging[i], nullptr);
+        if (m_envStagingMemory[i] != VK_NULL_HANDLE) vkFreeMemory(m_device, m_envStagingMemory[i], nullptr);
+        m_sceneUbo[i] = VK_NULL_HANDLE;
+        m_sceneUboMemory[i] = VK_NULL_HANDLE;
+        m_sceneUboPtr[i] = nullptr;
+        m_envStaging[i] = VK_NULL_HANDLE;
+        m_envStagingMemory[i] = VK_NULL_HANDLE;
+        m_envStagingPtr[i] = nullptr;
+    }
+    destroyPlaneImage(m_env);
+    if (m_envSampler != VK_NULL_HANDLE) vkDestroySampler(m_device, m_envSampler, nullptr);
+    if (m_scenePool != VK_NULL_HANDLE) vkDestroyDescriptorPool(m_device, m_scenePool, nullptr);
+    if (m_sceneSetLayout != VK_NULL_HANDLE) vkDestroyDescriptorSetLayout(m_device, m_sceneSetLayout, nullptr);
+    m_envSampler = VK_NULL_HANDLE;
+    m_scenePool = VK_NULL_HANDLE;
+    m_sceneSetLayout = VK_NULL_HANDLE;
+    m_sceneSets.fill(VK_NULL_HANDLE);
+    m_envLayoutReady = false;
+}
+
+void VulkanRenderer::uploadEnvironmentMap(const uint8_t* rgba, uint32_t width, uint32_t height, uint64_t version)
+{
+    if (!m_frameActive || !rgba || width != m_envW || height != m_envH || m_env.image == VK_NULL_HANDLE) return;
+    if (m_envReal && version == m_envVersion) return;
+    std::memcpy(m_envStagingPtr[m_frameSlot], rgba, size_t(width) * height * 4);
+
+    VkCommandBuffer cmd = currentCmd();
+    VkImageMemoryBarrier b{};
+    b.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    b.oldLayout = m_envLayoutReady ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
+    b.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    b.image = m_env.image;
+    b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    b.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    vkCmdPipelineBarrier(cmd, m_envLayoutReady ? VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT : VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &b);
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {width, height, 1};
+    vkCmdCopyBufferToImage(cmd, m_envStaging[m_frameSlot], m_env.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+    b.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    b.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    b.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    b.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &b);
+    m_envLayoutReady = true;
+    m_envReal = version != 0;
+    m_envVersion = version;
+}
+
+void VulkanRenderer::ensureSceneInputs()
+{
+    if (!m_frameActive) return;
+    // До первого кадра с iPhone: серое видео 2x2 (passthrough его не рисует) и пустая карта LiDAR
+    if (!m_ptLayoutReady) {
+        const uint8_t y[4] = {128, 128, 128, 128};
+        const uint8_t uv[2] = {128, 128};
+        PassthroughFrame f;
+        f.y = y;
+        f.uv = uv;
+        f.width = 2;
+        f.height = 2;
+        f.id = UINT64_MAX;
+        uploadPassthroughFrame(f);
+        m_ptHasFrame = false;
+        m_ptLastId = 0;
+    }
+    // Нейтральная «комната» до первой оценки: светлый верх, тёмный низ
+    if (!m_envLayoutReady && m_env.image != VK_NULL_HANDLE) {
+        std::vector<uint8_t> neutral(size_t(kEnvW) * kEnvH * 4);
+        for (uint32_t v = 0; v < kEnvH; ++v) {
+            const float t = float(v) / float(kEnvH - 1);
+            const uint8_t c = uint8_t(150.0f - 70.0f * t);
+            for (uint32_t u = 0; u < kEnvW; ++u) {
+                uint8_t* p = neutral.data() + (size_t(v) * kEnvW + u) * 4;
+                p[0] = p[1] = p[2] = c;
+                p[3] = 0;
+            }
+        }
+        uploadEnvironmentMap(neutral.data(), kEnvW, kEnvH, 0);
+    }
+}
+
+void VulkanRenderer::writeSceneUbo()
+{
+    if (m_sceneUboFrame == m_frameNumber || !m_sceneUboPtr[m_frameSlot]) return;
+    m_sceneUboFrame = m_frameNumber;
+    const SceneParams& sp = m_sceneParams;
+
+    SceneUbo u{};
+    u.proj = m_projectionMatrix;
+    u.cvFromEye = glm::mat4(sp.cvFromEye);
+    // Поворот вида одинаков для обоих глаз (стерео — только сдвиг)
+    const glm::mat3 eyeFromWorld = glm::mat3(m_viewMatrix);
+    u.worldFromEye = glm::mat4(glm::transpose(eyeFromWorld));
+    u.cam = sp.camIntrinsicsNorm;
+    u.lightDir = glm::vec4(glm::normalize(eyeFromWorld * glm::normalize(sp.lightDirWorld)), 1.0f);
+    u.lightColor = glm::vec4(sp.lightColor, sp.shadowStrength);
+    bool shValid = false;
+    for (const auto& c : sp.sh) shValid = shValid || glm::length(c) > 1e-6f;
+    for (int k = 0; k < 9; ++k) u.sh[k] = glm::vec4(sp.sh[size_t(k)], 0.0f);
+    if (!shValid) {
+        // Нейтральный свет: равномерный фон 0.45 + чуть ярче сверху
+        u.sh[0] = glm::vec4(glm::vec3(0.45f / 0.282095f), 0.0f);
+        u.sh[1] = glm::vec4(glm::vec3(0.25f), 0.0f);
+    }
+    int flags = 0;
+    if (sp.occlusion) flags |= 1;
+    if (m_ptHasDepth) flags |= 2;
+    if (m_ptHasFrame) flags |= 4;
+    if (sp.reflections) flags |= 8;
+    if (m_envReal) flags |= 16;
+    const int videoFlags = (sp.fullRange ? 1 : 0) | (sp.bt709 ? 2 : 0);
+    u.params = glm::vec4(float(flags), float(videoFlags), std::max(0.005f, sp.occlusionSoftness), 1.0f);
+    std::memcpy(m_sceneUboPtr[m_frameSlot], &u, sizeof(u));
+}
+
 #endif // USE_VULKAN

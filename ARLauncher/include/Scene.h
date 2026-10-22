@@ -22,9 +22,14 @@ struct SceneObject {
     uint32_t textureId;
     bool visible;
     float boundingRadius; // Радиус ограничивающей сферы для frustum culling
-    
-    SceneObject() : id(0), meshId(0), position(0.0f), rotation(1.0f, 0, 0, 0), 
-                    scale(1.0f), textureId(0), visible(true), boundingRadius(0.5f) {}
+    glm::vec4 color;      // sRGB + альфа
+    float metallic;       // 0 — пластик/краска, 1 — металл (отражает комнату)
+    float roughness;      // 0 — зеркало, 1 — матовый
+    bool onFloor;         // стоит на реальном полу (высота — от LiDAR), до того как пол найден — скрыт
+
+    SceneObject() : id(0), meshId(0), position(0.0f), rotation(1.0f, 0, 0, 0),
+                    scale(1.0f), textureId(0), visible(true), boundingRadius(0.5f),
+                    color(0.2f, 0.7f, 1.0f, 1.0f), metallic(0.0f), roughness(0.5f), onFloor(false) {}
 };
 
 /**
@@ -53,9 +58,18 @@ public:
     // Получение данных для рендеринга
     std::vector<glm::mat4> getObjectTransforms() const;
     std::vector<uint32_t> getVisibleMeshIds() const;
+    std::vector<const SceneObject*> getVisibleObjects() const;
     
     // Создание демо-объектов
     void createDemoScene(Renderer* renderer);
+
+    /// Высота реального пола (мир рендера) — объекты onFloor ставятся на него
+    void setFloorHeight(float y);
+
+    uint32_t cubeMeshId() const { return m_cubeMeshId; }
+    uint32_t sphereMeshId() const { return m_sphereMeshId; }
+    uint32_t torusMeshId() const { return m_torusMeshId; }
+    const std::vector<SceneObject>& objects() const { return m_objects; }
     
     // Синхронизация с реальной камерой
     void updateCameraFromAR(const glm::vec3& position, const glm::quat& rotation);

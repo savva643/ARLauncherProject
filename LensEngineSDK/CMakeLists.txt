@@ -177,6 +177,9 @@ set(LENSENGINE_SOURCES
     src/HeadTracker.cpp
     src/VioTracker.cpp
     src/TrackingSession.cpp
+    src/LidarOdometry.cpp
+    src/EnvironmentProbe.cpp
+    src/MarkerTracker.cpp
 )
 
 set(LENSENGINE_HEADERS
@@ -210,6 +213,9 @@ set(LENSENGINE_HEADERS
     include/HeadTracker.h
     include/VioTracker.h
     include/TrackingSession.h
+    include/LidarOdometry.h
+    include/EnvironmentProbe.h
+    include/MarkerTracker.h
 )
 
 # Создание библиотеки
@@ -313,5 +319,13 @@ if(BUILD_TESTS)
     target_link_libraries(test_head_tracker LensEngineSDK)
     add_executable(test_tracking_session tests/test_tracking_session.cpp)
     target_link_libraries(test_tracking_session LensEngineSDK)
+    add_executable(test_lidar_odometry tests/test_lidar_odometry.cpp)
+    target_link_libraries(test_lidar_odometry LensEngineSDK)
+    add_executable(test_environment_probe tests/test_environment_probe.cpp)
+    target_link_libraries(test_environment_probe LensEngineSDK)
+    if(LENSENGINE_USE_OPENCV AND OpenCV_FOUND)
+        add_executable(test_marker_tracker tests/test_marker_tracker.cpp)
+        target_link_libraries(test_marker_tracker LensEngineSDK ${OpenCV_LIBS})
+    endif()
 endif()
 

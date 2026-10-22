@@ -100,9 +100,33 @@ int main()
     for (int i = 0; i < 300; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(2.0, 0, 9.6), true);
     const int lookDown = flipped.status().mountRollDeg;
     std::printf("mount flip: %d -> %d (look down keeps %d)\n", before, after, lookDown);
+    // Портрет (верх телефона вверх) держим 2+ с — крепление 90°
+    for (int i = 0; i < 400; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(0, 9.8, 0), true);
+    const int portrait = flipped.status().mountRollDeg;
+    // Вручную 180°: гравитация говорит «0°», но крепление не меняется
+    flipped.setMount(180);
+    for (int i = 0; i < 300; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(9.8, 0, 0), true);
+    const int manual = flipped.status().mountRollDeg;
+    const bool manualFlag = !flipped.status().mountAuto;
+    // Обратно в авто — подхватывает реальное положение
+    flipped.setMount(-1);
+    for (int i = 0; i < 300; ++i, ft += 10'000'000) flipped.addImu(ft, glm::dvec3(0), glm::dvec3(9.8, 0, 0), true);
+    const int backToAuto = flipped.status().mountRollDeg;
+    std::printf("portrait -> %d, manual 180 -> %d, auto again -> %d\n", portrait, manual, backToAuto);
+
+    // Крепление 90°: ось y устройства вверх -> «вверх» глаза = y устройства
+    LensEngine::TrackingSession por;
+    LensEngine::TrackingSession::Options popts;
+    popts.enableVio = false;
+    popts.mountRollDeg = 90;
+    por.start(popts);
+    // Верх телефона (+y_d) в осях камеры OpenCV — это -x_c; в осях глаза он должен смотреть вверх (+y)
+    const glm::dvec3 devUpInEye = glm::conjugate(por.eyeToCameraRotation()) * glm::dvec3(-1, 0, 0);
+    std::printf("portrait mount: phone top in eye axes (%.2f %.2f %.2f)\n", devUpInEye.x, devUpInEye.y, devUpInEye.z);
 
     const bool ok = maxErr < 0.5 && maxForwardErr < 0.5 && st.mountRollDeg == 0 &&
-                    before == 0 && after == 180 && lookDown == 180;
+                    before == 0 && after == 180 && lookDown == 180 && portrait == 90 && manual == 180 &&
+                    manualFlag && backToAuto == 0 && devUpInEye.y > 0.99;
     std::printf("%s\n", ok ? "PASS" : "FAIL");
     return ok ? 0 : 1;
 }

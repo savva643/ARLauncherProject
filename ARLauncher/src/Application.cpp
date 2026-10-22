@@ -9,6 +9,9 @@
 #include "Style.h"
 #include "LensEngineAPI.h"
 #include "TrackingSession.h"
+#include "EnvironmentProbe.h"
+#include "MarkerTracker.h"
+#include "AudioEngine.h"
 #include "ARLauncherAPI.h"
 #include "FontRenderer.h"
 #include "SensorStream/StreamReceiver.h"
@@ -44,6 +47,20 @@ bool envFlag(const char* name)
 {
     const char* v = std::getenv(name);
     return v && v[0] == '1';
+}
+
+bool envFlagDefault(const char* name, bool fallback)
+{
+    const char* v = std::getenv(name);
+    return v && v[0] ? v[0] == '1' : fallback;
+}
+
+// ARL_MOUNT: auto | 0 | 90 | 180 | 270
+int envMount()
+{
+    const char* v = std::getenv("ARL_MOUNT");
+    if (!v || !v[0] || std::strcmp(v, "auto") == 0 || std::strcmp(v, "-1") == 0) return -1;
+    return std::atoi(v);
 }
 
 } // namespace
@@ -84,6 +101,11 @@ bool Application::initialize(int argc, char* argv[])
     m_eyeHFovDeg = static_cast<float>(envDouble("ARL_FOV", 0.0));
     m_stereo = envFlag("ARL_STEREO");
     m_depthOverlay = envFlag("ARL_LIDAR_OVERLAY");
+    m_occlusion = envFlagDefault("ARL_OCCLUSION", true);
+    m_shadows = envFlagDefault("ARL_SHADOWS", true);
+    m_lighting = envFlagDefault("ARL_LIGHTING", true);
+    m_markersEnabled = envFlagDefault("ARL_MARKERS", true);
+    m_mountSetting = envMount();
     m_ipdMeters = static_cast<float>(envDouble("ARL_IPD_MM", 63.0) / 1000.0);
     m_eyeCount = m_stereo ? 2 : 1;
 
@@ -119,6 +141,7 @@ bool Application::initialize(int argc, char* argv[])
     if (!initializeSensorStream()) {
         std::cerr << "Warning: sensor stream not started, continuing without iPhone" << std::endl;
     }
+    initializeAudio();
 
     m_statsStart = std::chrono::steady_clock::now();
     m_splashStart = m_statsStart;
@@ -126,7 +149,8 @@ bool Application::initialize(int argc, char* argv[])
     m_initialized = true;
     m_running = true;
 
-    std::cout << "[CONTROLS] R — recenter, P — reprojection on/off, O — prediction on/off, L — LiDAR overlay, ESC — exit" << std::endl;
+    std::cout << "[CONTROLS] R — recenter, M — phone mount (auto/0/90/180/270), K — occlusion, H — shadows, "
+                 "E — room lighting/reflections, U — sound on/off, L — LiDAR overlay, P — reprojection, O — prediction, ESC — exit" << std::endl;
     return true;
 }
 
@@ -162,11 +186,18 @@ void Application::shutdown()
         m_depthCv.notify_all();
         if (m_depthThread.joinable()) m_depthThread.join();
     }
+    if (m_visionRunning) {
+        m_visionRunning = false;
+        m_visionCv.notify_all();
+        if (m_visionThread.joinable()) m_visionThread.join();
+    }
     if (m_tracking) {
         m_tracking->stop();
     }
     m_stream.reset();
     m_tracking.reset();
+    m_audioSources.clear();
+    m_audio.reset();
 
     m_uiRenderer.reset();
     m_launcherAPI.reset();
@@ -365,10 +396,14 @@ bool Application::initializeLensEngine()
     m_tracking = std::make_unique<LensEngine::TrackingSession>();
     LensEngine::TrackingSession::Options opts;
     opts.enableVio = !envFlag("ARL_NO_VIO");
-    if (const char* mount = std::getenv("ARL_MOUNT")) {
-        opts.mountRollDeg = std::atoi(mount);
-    }
+    opts.enableLidar = envFlagDefault("ARL_LIDAR_TRACKING", true);
+    opts.mountRollDeg = m_mountSetting;
     m_tracking->start(opts);
+    m_envProbe = std::make_unique<LensEngine::EnvironmentProbe>();
+    if (m_markersEnabled && LensEngine::MarkerTracker::available()) {
+        m_markers = std::make_unique<LensEngine::MarkerTracker>(envDouble("ARL_MARKER_SIZE_CM", 10.0) / 100.0);
+        std::cout << "[MARKERS] ArUco DICT_4X4_50, size " << envDouble("ARL_MARKER_SIZE_CM", 10.0) << " cm" << std::endl;
+    }
     return true;
 }
 
@@ -388,6 +423,13 @@ bool Application::initializeSensorStream()
         const int64_t midExposure = f->ptsNs + int64_t(f->exposureUs) * 500;
         m_tracking->addFrame(midExposure, f->y.data(), f->width, f->height, f->width,
                              f->fx, f->fy, f->cx, f->cy);
+
+        // Свет комнаты и метки — в своём потоке (берёт самый свежий кадр)
+        {
+            std::lock_guard<std::mutex> lock(m_visionMutex);
+            m_visionFrame = f;
+        }
+        m_visionCv.notify_one();
     });
 
     // LiDAR — в отдельный поток (DLIO тяжёлый, сетевой поток задерживать нельзя)
@@ -405,11 +447,115 @@ bool Application::initializeSensorStream()
         m_depthCv.notify_one();
     });
 
+    m_visionRunning = true;
+    m_visionThread = std::thread(&Application::visionWorker, this);
+
     if (!m_stream->start()) {
         return false;
     }
     std::cout << "[OK] SensorStream: USB (iPhone hotspot) port 9001, Wi-Fi port 9000. Waiting for iPhone..." << std::endl;
     return true;
+}
+
+void Application::initializeAudio()
+{
+    if (!envFlagDefault("ARL_AUDIO", true) || !m_scene) return;
+    m_audio = std::make_unique<AudioEngine>();
+    if (!m_audio->initialize(envFlagDefault("ARL_HRTF", true))) {
+        m_audio.reset();
+        return;
+    }
+    // Демо: тор гудит, шар на полу звенит раз в 2.5 с
+    const auto& objects = m_scene->objects();
+    for (size_t i = 0; i < objects.size(); ++i) {
+        const SceneObject& o = objects[i];
+        int id = -1;
+        if (o.meshId == m_scene->torusMeshId()) {
+            id = m_audio->addSource(AudioEngine::makeHum(48000, 2.0f), 48000, true, 0.35f);
+        } else if (o.onFloor && o.meshId == m_scene->sphereMeshId()) {
+            id = m_audio->addSource(AudioEngine::makeChime(48000, 2.5f), 48000, true, 0.6f);
+        }
+        if (id >= 0) m_audioSources.push_back({id, i, 0.0f});
+    }
+}
+
+float Application::lidarOcclusion(const glm::vec3& worldPos)
+{
+    std::shared_ptr<sensorstream::DepthFrame> d;
+    {
+        std::lock_guard<std::mutex> lock(m_depthMutex);
+        d = m_overlayDepth;
+    }
+    if (!d || d->depth.empty() || !m_tracking || d->fx <= 0.0f) return -1.0f;
+    glm::dquat worldFromCam;
+    if (!m_tracking->cameraOrientationAt(d->tNs, worldFromCam)) return -1.0f;
+    const auto eye = m_tracking->predictEye(d->tNs);
+    if (!eye.valid) return -1.0f;
+    const glm::dvec3 c = glm::conjugate(worldFromCam) * (glm::dvec3(worldPos) - eye.position);
+    if (c.z < 0.2) return -1.0f;   // позади камеры — LiDAR не видит
+    const int u = int(std::lround(d->fx * c.x / c.z + d->cx));
+    const int v = int(std::lround(d->fy * c.y / c.z + d->cy));
+    if (u < 1 || v < 1 || u >= d->width - 1 || v >= d->height - 1) return -1.0f;
+    // Ближайшая поверхность в окрестности 3x3 (тонкие предметы не пропускаем)
+    float nearest = 1e9f;
+    for (int dy = -1; dy <= 1; ++dy)
+        for (int dx = -1; dx <= 1; ++dx) {
+            const float z = d->depth[size_t(v + dy) * d->width + size_t(u + dx)];
+            if (z > 0.05f && std::isfinite(z)) nearest = std::min(nearest, z);
+        }
+    if (nearest > 1e8f) return -1.0f;
+    return nearest < float(c.z) - 0.25f ? 1.0f : 0.0f;
+}
+
+void Application::updateAudio()
+{
+    if (!m_audio || !m_scene) return;
+    const glm::mat4 worldFromEye = glm::inverse(m_viewMatrix[0]);
+    m_audio->setListener(glm::vec3(worldFromEye[3]), glm::quat_cast(glm::mat3(worldFromEye)));
+    const auto& objects = m_scene->objects();
+    for (auto& s : m_audioSources) {
+        if (s.objectIndex >= objects.size()) continue;
+        const SceneObject& o = objects[s.objectIndex];
+        m_audio->setSourcePosition(s.sourceId, o.position);
+        // Объект за реальной стеной — звук глуше; вне поля зрения LiDAR оставляем последнее
+        const float target = lidarOcclusion(o.position);
+        if (target >= 0.0f) s.occlusion += (target - s.occlusion) * 0.15f;
+        m_audio->setSourceOcclusion(s.sourceId, (m_occlusion && o.visible) ? s.occlusion : 0.0f);
+    }
+}
+
+void Application::visionWorker()
+{
+    int64_t lastEnv = 0, lastMarkers = 0;
+    while (m_visionRunning) {
+        sensorstream::VideoFramePtr f;
+        {
+            std::unique_lock<std::mutex> lock(m_visionMutex);
+            m_visionCv.wait_for(lock, std::chrono::milliseconds(200), [this] { return !m_visionRunning || m_visionFrame; });
+            if (!m_visionRunning) break;
+            f = std::move(m_visionFrame);
+        }
+        if (!f || !m_tracking) continue;
+        const int64_t midExposure = f->ptsNs + int64_t(f->exposureUs) * 500;
+        glm::dquat worldFromCam;
+        if (!m_tracking->cameraOrientationAt(midExposure, worldFromCam)) continue;
+        const int64_t now = sensorstream::pcNowNs();
+
+        // Свет комнаты: 10 раз в секунду кадр «вклеивается» в карту окружения (~1 мс)
+        if (m_lighting && m_envProbe && now - lastEnv > 100'000'000LL) {
+            lastEnv = now;
+            m_envProbe->addFrame(f->y.data(), f->width, f->uv.data(), ((f->width + 1) / 2) * 2, f->width, f->height,
+                                 f->fx, f->fy, f->cx, f->cy, glm::quat(worldFromCam), f->fullRange, f->bt709);
+        }
+        // Метки ArUco: 15 раз в секунду (детектор 3-15 мс на кадр)
+        if (m_markers && now - lastMarkers > 66'000'000LL) {
+            lastMarkers = now;
+            const auto eye = m_tracking->predictEye(midExposure);   // положение камеры в мире на момент кадра
+            m_markersInView = m_markers->process(midExposure, f->y.data(), f->width, f->height, f->width,
+                                                 f->fx, f->fy, f->cx, f->cy, worldFromCam,
+                                                 eye.valid ? eye.position : glm::dvec3(0.0));
+        }
+    }
 }
 
 void Application::depthWorker()
@@ -422,10 +568,9 @@ void Application::depthWorker()
             if (!m_depthRunning) break;
             d = std::move(m_pendingDepth);
         }
-        if (!d || !m_lensEngine) continue;
-        m_lensEngine->processLidarData(reinterpret_cast<const uint8_t*>(d->depth.data()),
-                                       d->depth.size() * sizeof(float), nullptr, 0,
-                                       static_cast<uint64_t>(d->tNs));
+        if (!d || !m_tracking) continue;
+        // Позиция по LiDAR (ICP по карте комнаты) + коррекция дрейфа гироскопа + пол
+        m_tracking->addDepth(d->tNs, d->depth.data(), d->width, d->height, d->fx, d->fy, d->cx, d->cy);
     }
 }
 
@@ -449,7 +594,10 @@ void Application::latchFrame()
     if (m_eyeHFovDeg > 1.0f) {
         tanX = std::tan(glm::radians(m_eyeHFovDeg) * 0.5f);
     } else if (frame && frame->fx > 1.0f) {
-        tanX = 0.9f * (frame->width * 0.5f) / frame->fx;
+        // Портретное крепление: по горизонтали глаза — короткая сторона кадра
+        const int mount = m_tracking ? m_tracking->status().mountRollDeg : 0;
+        tanX = (mount == 90 || mount == 270) ? 0.9f * (frame->height * 0.5f) / frame->fy
+                                             : 0.9f * (frame->width * 0.5f) / frame->fx;
     }
     const float eyeAspect = m_stereo ? aspect * 0.5f : aspect;
     const float tanY = tanX / eyeAspect;
@@ -490,7 +638,7 @@ void Application::latchFrame()
     m_pt->valid = false;
     if (frame && !frame->y.empty()) {
         // LiDAR: до видео, чтобы дескриптор глубины уже указывал на настоящую карту
-        if (m_depthOverlay) {
+        if (m_depthOverlay || m_occlusion) {
             std::shared_ptr<sensorstream::DepthFrame> depth;
             {
                 std::lock_guard<std::mutex> lock(m_depthMutex);
@@ -538,6 +686,36 @@ void Application::latchFrame()
         // Камера одна (моно): обоим глазам одно и то же изображение, направленное «в бесконечность»
         m_pt->params[0] = p;
         m_pt->params[1] = p;
+
+        // 3D-объекты: те же лучи в кадр видео/LiDAR (окклюзия, тени), свет и пол
+        VulkanRenderer::SceneParams sp;
+        sp.cvFromEye = p.cvFromEye;
+        sp.camIntrinsicsNorm = p.camIntrinsicsNorm;
+        sp.fullRange = p.fullRange;
+        sp.bt709 = p.bt709;
+        sp.occlusion = m_occlusion;
+        sp.shadows = m_shadows;
+        sp.reflections = m_lighting;
+        const auto st = m_tracking->status();
+        sp.floorValid = st.hasFloor;
+        sp.floorY = float(st.floorY);
+        if (m_lighting && m_envProbe) {
+            const auto L = m_envProbe->lighting();
+            if (L.valid) {
+                sp.sh = L.sh;
+                sp.lightDirWorld = L.lightDir;
+                sp.lightColor = L.lightColor;
+                // Тень тем темнее, чем сильнее источник по сравнению с фоном комнаты
+                const float key = glm::dot(L.lightColor, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+                const float amb = glm::dot(L.ambient, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+                sp.shadowStrength = std::clamp(key / (key + amb + 1e-3f), 0.25f, 0.65f);
+            }
+            if (m_envProbe->copyTexture(m_envTexture) != 0) {
+                vk->uploadEnvironmentMap(m_envTexture.data(), LensEngine::EnvironmentProbe::kWidth,
+                                         LensEngine::EnvironmentProbe::kHeight, m_envProbe->version());
+            }
+        }
+        vk->setSceneParams(sp);
         m_pt->valid = staleFade > 0.0f;
         m_frameHasVideo = true;
 
@@ -553,8 +731,13 @@ void Application::update(float deltaTime)
 {
     if (m_scene) {
         m_scene->update(deltaTime);
+        if (m_tracking) {
+            const auto st = m_tracking->status();
+            if (st.hasFloor) m_scene->setFloorHeight(static_cast<float>(st.floorY));
+        }
     }
     updateSplash();
+    updateAudio();
     updateHud();
     printStats();
 }
@@ -580,12 +763,18 @@ void Application::updateHud()
     if (m_tracking) {
         const auto st = m_tracking->status();
         const glm::mat4 worldFromEye = glm::inverse(m_viewMatrix[0]);
-        std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m", st.mode.c_str(),
-                      worldFromEye[3].x, worldFromEye[3].y, worldFromEye[3].z);
+        if (st.lidarTracking) {
+            std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m, map %d kf%s", st.mode.c_str(),
+                          worldFromEye[3].x, worldFromEye[3].y, worldFromEye[3].z, st.lidarKeyframes,
+                          st.hasFloor ? ", floor found" : "");
+        } else {
+            std::snprintf(buf, sizeof(buf), "%s: (%.2f, %.2f, %.2f) m", st.mode.c_str(),
+                          worldFromEye[3].x, worldFromEye[3].y, worldFromEye[3].z);
+        }
         m_poseText->setText(buf);
         if (st.imuActive) {
-            std::snprintf(buf, sizeof(buf), "IMU: %.0f Hz, mount %d°, gyro bias %.3f°/s", ss.imuRateHz,
-                          st.mountRollDeg, glm::degrees(glm::length(st.gyroBias)));
+            std::snprintf(buf, sizeof(buf), "IMU: %.0f Hz, mount %d° %s, gyro bias %.3f°/s", ss.imuRateHz,
+                          st.mountRollDeg, st.mountAuto ? "auto" : "manual", glm::degrees(glm::length(st.gyroBias)));
         } else {
             std::snprintf(buf, sizeof(buf), "IMU: No data");
         }
@@ -595,8 +784,8 @@ void Application::updateHud()
     if (ss.clientConnected) {
         const int dw = m_depthW.load();
         if (dw > 0) {
-            std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR %dx%d%s", ss.megabitsPerSecond, dw,
-                          m_depthH.load(), m_depthOverlay ? " (overlay L)" : "");
+            std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR %dx%d%s, markers %d", ss.megabitsPerSecond, dw,
+                          m_depthH.load(), m_depthOverlay ? " (overlay L)" : "", m_markersInView.load());
         } else {
             std::snprintf(buf, sizeof(buf), "iPhone: %.1f Mbit/s, LiDAR off", ss.megabitsPerSecond);
         }
@@ -687,6 +876,30 @@ void Application::render()
         }
         transforms = m_scene->getObjectTransforms();
         meshIds = m_scene->getVisibleMeshIds();
+        std::vector<VulkanRenderer::ObjectMaterial> materials;
+        for (const SceneObject* obj : m_scene->getVisibleObjects()) {
+            materials.push_back({obj->color, obj->metallic, obj->roughness});
+        }
+        // Якоря меток: кубик 6 см стоит на каждой метке, которую видели (остаётся на месте вне кадра)
+        if (m_markers && m_scene->cubeMeshId() != 0) {
+            const auto anchors = m_markers->anchors();
+            const float spin = float(glfwGetTime());
+            for (const auto& a : anchors) {
+                if (a.detections < 3) continue;
+                const glm::mat4 onMarker = glm::translate(glm::mat4(1.0f), glm::vec3(a.position)) *
+                                           glm::mat4_cast(glm::quat(a.orientation)) *
+                                           glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.0f, 0.03f)) *
+                                           glm::rotate(glm::mat4(1.0f), spin, glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                           glm::scale(glm::mat4(1.0f), glm::vec3(0.06f));
+                transforms.push_back(onMarker);
+                meshIds.push_back(m_scene->cubeMeshId());
+                const float hue = float(a.id % 6) / 6.0f;
+                materials.push_back({glm::vec4(0.5f + 0.5f * std::cos(6.2832f * hue), 0.5f + 0.5f * std::cos(6.2832f * (hue - 0.333f)),
+                                               0.5f + 0.5f * std::cos(6.2832f * (hue - 0.667f)), 1.0f),
+                                     0.2f, 0.3f});
+            }
+        }
+        vk->setObjectMaterials(std::move(materials));
     }
 
     for (int i = 0; i < m_eyeCount; ++i) {
@@ -785,6 +998,31 @@ void Application::onKeyPress(GLFWwindow* window, int key, int scancode, int acti
     case GLFW_KEY_L:
         app->m_depthOverlay = !app->m_depthOverlay;
         std::cout << "[LIDAR] depth overlay " << (app->m_depthOverlay ? "ON" : "OFF") << std::endl;
+        break;
+    case GLFW_KEY_K:
+        app->m_occlusion = !app->m_occlusion;
+        std::cout << "[SCENE] LiDAR occlusion " << (app->m_occlusion ? "ON" : "OFF") << std::endl;
+        break;
+    case GLFW_KEY_H:
+        app->m_shadows = !app->m_shadows;
+        std::cout << "[SCENE] shadows " << (app->m_shadows ? "ON" : "OFF") << std::endl;
+        break;
+    case GLFW_KEY_E:
+        app->m_lighting = !app->m_lighting;
+        std::cout << "[SCENE] room lighting + reflections " << (app->m_lighting ? "ON" : "OFF") << std::endl;
+        break;
+    case GLFW_KEY_M:
+        // авто -> 0 -> 90 -> 180 -> 270 -> авто
+        app->m_mountSetting = app->m_mountSetting < 0 ? 0 : (app->m_mountSetting >= 270 ? -1 : app->m_mountSetting + 90);
+        if (app->m_tracking) app->m_tracking->setMount(app->m_mountSetting);
+        std::cout << "[TRACKING] phone mount: " << (app->m_mountSetting < 0 ? std::string("auto") : std::to_string(app->m_mountSetting))
+                  << std::endl;
+        break;
+    case GLFW_KEY_U:
+        if (app->m_audio) {
+            app->m_audio->setMuted(!app->m_audio->muted());
+            std::cout << "[AUDIO] " << (app->m_audio->muted() ? "muted" : "on") << std::endl;
+        }
         break;
     case GLFW_KEY_O:
         app->m_prediction = !app->m_prediction;

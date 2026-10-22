@@ -44,24 +44,23 @@ void TrackingSession::start(const Options& options)
     m_mountAccelSum = glm::dvec3(0.0);
     m_mountCount = 0;
     m_mountFlipCount = 0;
-    m_portraitCount = 0;
-    m_portraitWarned = false;
-    if (options.mountRollDeg >= 0) {
-        m_mountRoll = options.mountRollDeg == 180 ? 180 : 0;
-        m_mountResolved = true;
-    } else {
-        m_mountResolved = false;
-    }
+    m_lidar.reset();
+    m_lidarFixT = 0;
+    m_lastDepthT = 0;
+    m_floorValid = false;
+    setMount(options.mountRollDeg);
 
     if (options.enableVio && VioTracker::available()) {
         m_vio = std::make_unique<VioTracker>();
         m_vio->setPoseCallback([this](const VioTracker::Pose& p) {
+            // LiDAR точнее и не теряет масштаб — VIO только когда LiDAR нет
+            if (p.tNs - m_lidarFixT.load() < 500'000'000LL) return;
             m_head.addVioPose(p.tNs, p.orientation, p.position, p.velocity);
         });
         m_vio->start();
     }
-    std::cout << "[LensEngine] tracking session started (VIO "
-              << (m_vio ? "OpenVINS" : "off — 3DoF + neck model") << ")" << std::endl;
+    std::cout << "[LensEngine] tracking session started (LiDAR odometry " << (options.enableLidar ? "on" : "off")
+              << ", VIO " << (m_vio ? "OpenVINS" : "off") << ")" << std::endl;
 }
 
 void TrackingSession::stop()
@@ -78,13 +77,14 @@ void TrackingSession::addImu(int64_t phoneTimeNs, const glm::dvec3& gyro, const 
     if (!m_mountResolved && hasAccel) {
         m_mountAccelSum += accel;
         if (++m_mountCount >= 20) {
-            // Канонично ось x устройства смотрит вверх (specific force +x); иначе телефон перевёрнут
-            m_mountRoll = (m_mountAccelSum.x >= 0) ? 0 : 180;
-            m_mountResolved = true;
+            // Канонично ось x устройства смотрит вверх (specific force +x); смотрим вниз/вверх — пока ландшафт
             m_gravityLp = m_mountAccelSum / double(m_mountCount);
+            const int m = mountFromGravity(m_gravityLp);
+            m_mountRoll = m >= 0 ? m : 0;
+            m_mountResolved = true;
             std::cout << "[LensEngine] phone mount detected: roll " << m_mountRoll.load() << " deg" << std::endl;
         }
-    } else if (hasAccel && m_options.mountRollDeg < 0) {
+    } else if (hasAccel && m_mountAuto.load()) {
         updateMount(accel);
     }
 
@@ -99,19 +99,45 @@ void TrackingSession::addFrame(int64_t phoneTimeNs, const uint8_t* y, int width,
     if (m_vio) m_vio->addFrame(phoneTimeNs, y, width, height, stride, fx, fy, cx, cy);
 }
 
+int TrackingSession::mountFromGravity(const glm::dvec3& g)
+{
+    const double n = glm::length(g);
+    if (n < 5.0) return -1;
+    if (std::abs(g.x) > 0.6 * n) return g.x >= 0 ? 0 : 180;    // ландшафт
+    if (std::abs(g.y) > 0.8 * n) return g.y >= 0 ? 90 : 270;   // портрет
+    return -1;                                                   // смотрим вверх/вниз — не понять
+}
+
+void TrackingSession::setMount(int rollDeg)
+{
+    if (rollDeg < 0) {
+        m_mountAuto = true;
+        m_mountResolved = false;
+        m_mountAccelSum = glm::dvec3(0.0);
+        m_mountCount = 0;
+        m_mountFlipCount = 0;
+        return;
+    }
+    rollDeg = ((rollDeg % 360) + 360) % 360;
+    rollDeg = ((rollDeg + 45) / 90 * 90) % 360;
+    m_mountAuto = false;
+    m_mountRoll = rollDeg;
+    m_mountResolved = true;
+    std::cout << "[LensEngine] phone mount set manually: roll " << rollDeg << " deg" << std::endl;
+}
+
 void TrackingSession::updateMount(const glm::dvec3& accel)
 {
     // Авто-режим: телефон могли перевернуть после подключения (подключились с телефоном в руке,
     // потом вставили в шлем другой стороной). Гравитация усредняется ~0.5 с, переключение —
-    // только если новое положение держится 1 с и телефон явно горизонтален (гистерезис:
-    // взгляд вверх/вниз крепление не переключает).
+    // только если новое положение держится 1 с и однозначно (гистерезис: взгляд вверх/вниз
+    // и наклоны головы крепление не переключают).
     m_gravityLp += (accel - m_gravityLp) * 0.02;
-    const double g = glm::length(m_gravityLp);
-    if (g < 5.0) return;   // свободное падение / тряска
-
-    const int desired = m_gravityLp.x >= 0 ? 0 : 180;
-    if (std::abs(m_gravityLp.x) > 0.6 * g && desired != m_mountRoll.load()) {
-        if (++m_mountFlipCount >= 100) {
+    const int desired = mountFromGravity(m_gravityLp);
+    if (desired >= 0 && desired != m_mountRoll.load()) {
+        // В портрет — только при уверенном удержании 2 с (наклон головы на 90° сам по себе редкость)
+        const int need = (desired == 90 || desired == 270) ? 200 : 100;
+        if (++m_mountFlipCount >= need) {
             m_mountRoll = desired;
             m_mountFlipCount = 0;
             std::cout << "[LensEngine] phone mount changed: roll " << desired << " deg" << std::endl;
@@ -119,32 +145,48 @@ void TrackingSession::updateMount(const glm::dvec3& accel)
     } else {
         m_mountFlipCount = 0;
     }
+}
 
-    // Портрет: ось y устройства вдоль гравитации. Камера тогда повёрнута на 90° — шлем рассчитан на ландшафт
-    if (std::abs(m_gravityLp.y) > 0.8 * g) {
-        if (++m_portraitCount >= 200 && !m_portraitWarned) {
-            m_portraitWarned = true;
-            std::cout << "[LensEngine] WARNING: phone is in portrait — mount it in landscape for correct passthrough" << std::endl;
-        }
-    } else {
-        m_portraitCount = 0;
-        m_portraitWarned = false;
+void TrackingSession::addDepth(int64_t phoneTimeNs, const float* depth, int width, int height,
+                               float fx, float fy, float cx, float cy)
+{
+    if (!m_options.enableLidar || !depth) return;
+    glm::dquat dev;
+    if (!m_head.orientationAt(phoneTimeNs, dev)) return;   // IMU ещё не инициализирован
+    const glm::dquat imuWorldFromCam = glm::normalize(dev * deviceFromCameraCV());
+
+    // Смещение с прошлой карты по IMU (акселерометр в фильтре позиции) — подсказка ICP там,
+    // где геометрии мало (стена во весь кадр)
+    glm::dvec3 p0, p1, imuDelta;
+    const bool haveDelta = m_lastDepthT != 0 && m_head.positionAt(m_lastDepthT, p0) && m_head.positionAt(phoneTimeNs, p1);
+    if (haveDelta) imuDelta = m_head.worldToFixDirection(p1 - p0);
+    m_lastDepthT = phoneTimeNs;
+
+    const LidarOdometry::Result r = m_lidar.process(phoneTimeNs, depth, width, height, fx, fy, cx, cy, imuWorldFromCam,
+                                                    haveDelta ? &imuDelta : nullptr);
+    m_lidarKeyframes = r.keyframes;
+    if (r.hasFloor) {
+        m_floorZ = r.floorZ;
+        m_floorValid = true;
     }
+    if (!r.ok) return;
+    m_lidarRmse = r.rmse;
+    m_lidarFixT = phoneTimeNs;
+    if (r.revisit) {
+        std::cout << "[LensEngine] LiDAR: familiar place, drift reset (" << r.keyframes << " keyframes)" << std::endl;
+    }
+    // Поза камеры -> поза устройства
+    const glm::dquat worldFromDevice = glm::normalize(r.pose.q * glm::conjugate(deviceFromCameraCV()));
+    m_head.addPoseFix(phoneTimeNs, worldFromDevice, r.pose.t);
 }
 
 glm::dquat TrackingSession::deviceFromEye() const
 {
-    // Глаз (GL): x вправо, y вверх, z назад. Канонично: x_eye = -y_d, y_eye = x_d, z_eye = z_d
-    if (m_mountRoll.load() == 180) {
-        static const glm::dquat q = glm::quat_cast(glm::dmat3(glm::dvec3(0, 1, 0),
-                                                              glm::dvec3(-1, 0, 0),
-                                                              glm::dvec3(0, 0, 1)));
-        return q;
-    }
-    static const glm::dquat q = glm::quat_cast(glm::dmat3(glm::dvec3(0, -1, 0),
-                                                          glm::dvec3(1, 0, 0),
-                                                          glm::dvec3(0, 0, 1)));
-    return q;
+    // Глаз (GL): x вправо, y вверх, z назад (к лицу, как ось z устройства).
+    // Крепление — поворот вокруг оси z устройства: 0° (ландшафт, верх слева): x_eye = -y_d, y_eye = x_d;
+    // 90° (портрет): оси совпадают; 180°: x_eye = y_d, y_eye = -x_d; 270°: x_eye = -x_d, y_eye = -y_d.
+    const double theta = glm::radians(double(m_mountRoll.load()) - 90.0);
+    return glm::angleAxis(theta, glm::dvec3(0, 0, 1));
 }
 
 glm::dquat TrackingSession::eyeToCameraRotation() const
@@ -195,8 +237,18 @@ TrackingSession::TrackingStatus TrackingSession::status() const
     st.vioAvailable = m_vio != nullptr;
     st.vioInitialized = m_vio && m_vio->initialized();
     st.mountRollDeg = m_mountRoll.load();
+    st.mountAuto = m_mountAuto.load();
     st.gyroBias = m_head.gyroBias();
-    st.mode = st.vioInitialized ? "6DoF (OpenVINS VIO)"
+    st.lidarTracking = m_lidarFixT.load() != 0 && m_lastImuT.load() - m_lidarFixT.load() < 500'000'000LL;
+    st.lidarKeyframes = m_lidarKeyframes.load();
+    st.lidarRmseMm = m_lidarRmse.load() * 1000.0;
+    if (m_floorValid.load() && m_head.hasFixFrame()) {
+        // Z-up мир LiDAR -> мир трекера -> Y-up мир рендера
+        st.hasFloor = true;
+        st.floorY = m_head.fixToWorld(glm::dvec3(0.0, 0.0, m_floorZ.load())).z;
+    }
+    st.mode = st.lidarTracking ? "6DoF (LiDAR + IMU)"
+            : st.vioInitialized ? "6DoF (OpenVINS VIO)"
             : st.vioAvailable ? "3DoF (VIO initializing: hold still, then move)"
             : "3DoF + neck model";
     return st;
