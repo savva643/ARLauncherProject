@@ -7,6 +7,9 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <array>
+#include <functional>
+#include <unordered_map>
 
 // Forward declarations
 struct GLFWwindow;
@@ -115,7 +118,87 @@ public:
                             bool hasButton = false,
                             const std::string& buttonText = "") override;
 
+    // ---------------- Passthrough-видео (NV12) с репроекцией ----------------
+    struct PassthroughFrame {
+        const uint8_t* y = nullptr;     // width*height
+        const uint8_t* uv = nullptr;    // (width/2)*(height/2) пар CbCr
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint64_t id = 0;                // одинаковый id повторно не загружается
+    };
+    struct PassthroughParams {
+        glm::mat3 cvFromEye{1.0f};                            // оси глаза (GL) -> оси камеры (OpenCV)
+        glm::vec4 camIntrinsicsNorm{1.0f, 1.0f, 0.5f, 0.5f};  // fx/w, fy/h, cx/w, cy/h
+        glm::vec2 eyeTanHalfFov{1.0f, 1.0f};
+        float opacity = 1.0f;
+        bool fullRange = true;
+        bool bt709 = true;
+    };
+
+    /// Колбэк вызывается каждый кадр ПОСЛЕ ожидания свободного кадра и acquire, но ДО начала render pass.
+    /// Здесь приложение берёт самую свежую позу (late latching) и загружает видеокадр.
+    void setPreRenderPassCallback(std::function<void()> cb) { m_preRenderPass = std::move(cb); }
+    /// Только из pre-render-pass колбэка: копирование кадра в GPU-текстуры (staging, без остановки конвейера)
+    void uploadPassthroughFrame(const PassthroughFrame& frame);
+    /// Внутри render pass: полноэкранный проход с репроекцией
+    void renderPassthrough(const PassthroughParams& params);
+    bool hasPassthroughFrame() const { return m_ptHasFrame; }
+    /// Область вывода для passthrough и 3D (стерео side-by-side). width<=0 — весь экран.
+    void setEyeViewport(float x, float y, float width, float height);
+
+    VkExtent2D swapchainExtent() const { return m_swapchainExtent; }
+    const char* presentModeName() const;
+    VkPresentModeKHR presentMode() const { return m_presentMode; }
+    bool isFrameActive() const { return m_frameActive; }
+
 private:
+    static constexpr uint32_t kFramesInFlight = 2;
+    VkCommandBuffer currentCmd() const { return m_frameCmd[m_frameSlot]; }
+
+    // Кадры в полёте (команды, ожидание swapchain, fence) + семафор «отрисовано» на каждый образ swapchain
+    std::array<VkCommandBuffer, kFramesInFlight> m_frameCmd{};
+    std::array<VkSemaphore, kFramesInFlight> m_frameImageAvailable{};
+    std::array<VkFence, kFramesInFlight> m_frameFences{};
+    std::vector<VkSemaphore> m_imageRenderFinished;
+    uint32_t m_frameSlot = 0;
+    bool m_frameActive = false;
+    VkPresentModeKHR m_presentMode = VK_PRESENT_MODE_FIFO_KHR;
+    std::function<void()> m_preRenderPass;
+    bool m_eyeViewportSet = false;
+    VkViewport m_eyeViewport{};
+    void applyEyeViewport(VkCommandBuffer cmd);
+    bool createRenderFinishedSemaphores();
+    void destroyRenderFinishedSemaphores();
+
+    // Passthrough-ресурсы
+    struct PlaneImage {
+        VkImage image = VK_NULL_HANDLE;
+        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkImageView view = VK_NULL_HANDLE;
+    };
+    PlaneImage m_ptY;
+    PlaneImage m_ptUV;
+    uint32_t m_ptWidth = 0;
+    uint32_t m_ptHeight = 0;
+    bool m_ptLayoutReady = false;
+    bool m_ptHasFrame = false;
+    uint64_t m_ptLastId = 0;
+    std::array<VkBuffer, kFramesInFlight> m_ptStaging{};
+    std::array<VkDeviceMemory, kFramesInFlight> m_ptStagingMemory{};
+    std::array<void*, kFramesInFlight> m_ptStagingPtr{};
+    VkDeviceSize m_ptStagingSize = 0;
+    VkSampler m_ptSampler = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_ptSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_ptPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_ptSet = VK_NULL_HANDLE;
+    VkPipelineLayout m_ptPipelineLayout = VK_NULL_HANDLE;
+    VkPipeline m_ptPipeline = VK_NULL_HANDLE;
+    bool createPassthroughPipeline();
+    void destroyPassthrough();
+    bool ensurePassthroughResources(uint32_t width, uint32_t height);
+    bool createPlaneImage(PlaneImage& plane, VkFormat format, uint32_t width, uint32_t height);
+    void destroyPlaneImage(PlaneImage& plane);
+
     glm::mat4 m_viewMatrix;
     glm::mat4 m_projectionMatrix;
     float m_deviceOrientation = 0.0f;
@@ -148,11 +231,6 @@ private:
     VkPipelineLayout m_pipelineLayout;
     VkPipeline m_graphicsPipeline;
     VkCommandPool m_commandPool;
-    std::vector<VkCommandBuffer> m_commandBuffers;
-    std::vector<VkSemaphore> m_imageAvailableSemaphores;
-    std::vector<VkSemaphore> m_renderFinishedSemaphores;
-    std::vector<VkFence> m_inFlightFences;
-    uint32_t m_currentFrame;
     uint32_t m_currentImageIndex;
     bool m_initialized;
     
@@ -244,7 +322,8 @@ private:
     bool createUIResources();
     void destroyUIResources();
     bool createUIPipeline();
-    void updateUIDescriptorSet(uint32_t textureId);
+    VkDescriptorSet updateUIDescriptorSet(uint32_t textureId);   // кэш: один set на текстуру
+    std::unordered_map<uint32_t, VkDescriptorSet> m_uiTextureSets;
     void renderUITexturedQuad(const UITexturePlacement& placement, bool overlayMode);
 
     // Image operations
@@ -253,7 +332,10 @@ private:
 #endif
 
 /**
- * @brief OpenGL рендерер
+ * @brief LEGACY: OpenGL рендерер.
+ *
+ * Не развивается и не поддерживает новый конвейер (NV12 passthrough, репроекция, late latching).
+ * Основной рендерер GlaskiOS — VulkanRenderer. Собирается только с -DUSE_VULKAN=OFF -DUSE_OPENGL=ON.
  */
 class OpenGLRenderer : public Renderer {
 public:

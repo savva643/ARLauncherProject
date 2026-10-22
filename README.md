@@ -2,6 +2,20 @@
 
 AR лаунчер для операционной системы AR - проект для получения и обработки данных с iPhone камеры и сенсоров, с отображением 3D сцены поверх реального мира.
 
+## ⚡ Новый конвейер (GlaskiOS streaming v2)
+
+- **Рендер — только Vulkan.** OpenGL — LEGACY, не развивается.
+- **SensorStream** — приём iPhone без Qt, H.264/HEVC → NV12 → GPU. Старый Qt SensorConnector — LEGACY.
+- **LensEngine::TrackingSession** — трекинг головы по сырому IMU с предсказанием; 6DoF через OpenVINS.
+- **Late latching + репроекция видео** — мир стоит на месте при поворотах головы.
+
+Как собрать, запустить и проверить без iPhone: [docs/GLASKI_STREAMING.md](docs/GLASKI_STREAMING.md).
+Протокол: [docs/PROTOCOL_V2.md](docs/PROTOCOL_V2.md).
+
+```bash
+./build_arlauncher.sh --vio && cd ARLauncher/build_vk && ./bin/ARLauncher
+```
+
 ## 📋 Описание
 
 ARLauncher - это нативный C++ лаунчер с 3D сценой для AR приложений. Проект состоит из трех независимых компонентов:

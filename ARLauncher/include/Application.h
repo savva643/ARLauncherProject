@@ -1,27 +1,34 @@
 #ifndef APPLICATION_H
 #define APPLICATION_H
 
-#include <memory>
-#include <string>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <cstdint>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <thread>
+
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 
 // Forward declarations
 struct GLFWwindow;
+
 namespace LensEngine {
     class LensEngineAPI;
+    class TrackingSession;
 }
-#ifdef USE_SENSOR_CONNECTOR
-namespace SensorConnector {
-    class SensorConnectorCore;
+
+namespace sensorstream {
+    class StreamReceiver;
+    struct DepthFrame;
 }
-#include <QtCore/QtGlobal>
-#include <QImage>
-#endif
+
 class Button;
 class Text;
-
 class Renderer;
 class Scene;
 class UIRenderer;
@@ -30,7 +37,12 @@ class FontRenderer;
 class LiDARVisualizer;
 
 /**
- * @brief Главный класс приложения ARLauncher
+ * @brief Главный класс приложения ARLauncher (GlaskiOS)
+ *
+ * Конвейер кадра (Vulkan):
+ *   iPhone → SensorStream (сеть/декод в своих потоках) → LensEngine::TrackingSession (IMU 100 Гц)
+ *   → beginFrame: ожидание слота GPU + acquire → LATE LATCH: поза предсказывается на момент показа,
+ *     свежий видеокадр загружается и репроецируется под эту позу → 3D-сцена → present
  */
 class Application {
 public:
@@ -57,13 +69,15 @@ private:
     bool initializeScene();
     bool initializeUI();
     bool initializeLensEngine();
-#ifdef USE_SENSOR_CONNECTOR
-    bool initializeSensorConnector();
-#endif
-    
+    bool initializeSensorStream();
+
     void update(float deltaTime);
     void render();
-    
+    void latchFrame();          // вызывается рендером после acquire, до render pass
+    void updateSplash();
+    void printStats();
+    void depthWorker();
+
     // GLFW callbacks
     static void onWindowClose(GLFWwindow* window);
     static void onWindowResize(GLFWwindow* window, int width, int height);
@@ -79,52 +93,59 @@ private:
     std::unique_ptr<LensEngine::LensEngineAPI> m_lensEngine;
     std::unique_ptr<FontRenderer> m_fontRenderer;
     std::unique_ptr<LiDARVisualizer> m_lidarVisualizer;
-#ifdef USE_SENSOR_CONNECTOR
-    std::unique_ptr<SensorConnector::SensorConnectorCore> m_sensorConnector;
-#endif
-    
+
+    // Новый конвейер сенсоров
+    std::unique_ptr<sensorstream::StreamReceiver> m_stream;
+    std::unique_ptr<LensEngine::TrackingSession> m_tracking;
+
     bool m_running;
     bool m_initialized;
-    
+
     int m_windowWidth;
     int m_windowHeight;
-    
+
+    // Дисплей
+    double m_refreshHz = 60.0;
+    double m_predictLeadMs = -1.0;     // <0 — авто по частоте и present mode
+    float m_eyeHFovDeg = 0.0f;         // 0 — как у камеры iPhone
+    bool m_reprojection = true;        // P — сравнить с/без репроекции
+    bool m_prediction = true;          // O — сравнить с/без предсказания
+    bool m_stereo = false;             // ARL_STEREO=1 — side-by-side для дисплея шлема
+    float m_ipdMeters = 0.063f;        // ARL_IPD_MM
+
+    // Результат late latching (заполняется в latchFrame, используется в render)
+    int m_eyeCount = 1;
+    glm::mat4 m_viewMatrix[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};
+    glm::mat4 m_projMatrix[2] = {glm::mat4(1.0f), glm::mat4(1.0f)};
+    bool m_frameHasPose = false;
+    bool m_frameHasVideo = false;
+    struct PassthroughState;
+    std::unique_ptr<PassthroughState> m_pt;
+
     // Статистика
     float m_deltaTime;
     float m_lastFrameTime;
+    uint64_t m_renderFrames = 0;
+    std::chrono::steady_clock::time_point m_statsStart;
+    double m_poseAgeMsSum = 0;
+    double m_videoAgeMsSum = 0;
+    uint64_t m_videoAgeCount = 0;
 
-#ifdef USE_SENSOR_CONNECTOR
-    // Splash overlay state
+    // Splash: 0-3 c надписи, 3-6 c появление видео/3D/UI, 6-9 c надписи гаснут
     bool m_splashActive = true;
-    qint64 m_splashStartMs = 0;
-    float m_videoOpacity = 0.0f;      // Opacity видео фона (0.0 - 1.0)
-    float m_3dObjectsOpacity = 0.0f;  // Opacity 3D объектов (0.0 - 1.0)
-    float m_uiOpacity = 0.0f;          // Opacity UI элементов (0.0 - 1.0)
-    float m_titleOpacity = 0.0f;       // Opacity надписей "Spatial Home" и "GlaskiOS" (0.0 - 1.0)
-    
-    // Camera interpolation for smooth movement
-    glm::vec3 m_targetCameraPosition;  // Целевая позиция из LensEngine
-    glm::quat m_targetCameraRotation;  // Целевая ротация из LensEngine
-    glm::vec3 m_currentCameraPosition; // Текущая интерполированная позиция
-    glm::quat m_currentCameraRotation; // Текущая интерполированная ротация
-    float m_lastIMUUpdateTime;
-    bool m_positionInitialized;
-    float m_deviceOrientation = 0.0f;  // Угол ориентации устройства (0/90/180/270)
-    
-    // 🔹 Указатели на UI тексты для обновления
-    std::shared_ptr<Text> m_connectionText;
-    std::shared_ptr<Text> m_imuText;
-    std::shared_ptr<Text> m_fpsText;
-    std::shared_ptr<Text> m_videoFpsText;
-    std::shared_ptr<Text> m_rotationText;
-    std::shared_ptr<Text> m_positionText;
-    float m_currentFps = 0.0f;
-    
-    // Depth map overlay
-    QImage m_depthOverlay;
-    bool m_hasDepthOverlay = false;
-#endif
+    bool m_splashStarted = false;
+    std::chrono::steady_clock::time_point m_splashStart;
+    float m_videoOpacity = 0.0f;
+    float m_3dObjectsOpacity = 0.0f;
+    float m_uiOpacity = 0.0f;
+    float m_titleOpacity = 0.0f;
+
+    // LiDAR → LensEngine (DLIO, облако точек) в отдельном потоке, чтобы не задерживать IMU
+    std::thread m_depthThread;
+    std::mutex m_depthMutex;
+    std::condition_variable m_depthCv;
+    std::shared_ptr<sensorstream::DepthFrame> m_pendingDepth;
+    std::atomic<bool> m_depthRunning{false};
 };
 
 #endif // APPLICATION_H
-

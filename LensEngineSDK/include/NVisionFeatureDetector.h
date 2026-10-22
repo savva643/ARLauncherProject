@@ -2,9 +2,11 @@
 #define NVISIONFEATUREDETECTOR_H
 
 #include "LensEngineTypes.h"
+#ifdef LENSENGINE_HAVE_NVISION
 #include <nvision/feature.h>
 #include <nvision/src/core/image.h>
 #include <nvision/src/core/pixel.h>
+#endif
 #include <vector>
 
 namespace LensEngine {
@@ -36,6 +38,7 @@ public:
      */
     std::vector<FeaturePoint> detectORBFeatures(const RGBImage& rgbImage, int maxFeatures = 500);
 
+#ifdef LENSENGINE_HAVE_NVISION
 private:
     /**
      * @brief Преобразует RGBImage в nvision::Image
@@ -46,6 +49,7 @@ private:
      * @brief Преобразует keypoints из nvision в FeaturePoint
      */
     FeaturePoint convertToFeaturePoint(const Eigen::Vector2f& keypoint, float response);
+#endif
 };
 
 } // namespace LensEngine

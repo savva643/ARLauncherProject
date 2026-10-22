@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# LEGACY: старая сборка с Qt SensorConnector и OpenGL.
+# Актуальная сборка (Vulkan + SensorStream + LensEngine): ./build_arlauncher.sh
+#
 # Скрипт сборки ARLauncher для Linux Ubuntu
 # Использование: ./build_linux.sh
 

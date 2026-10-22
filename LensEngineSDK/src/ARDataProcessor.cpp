@@ -17,7 +17,9 @@ ARDataProcessor::ARDataProcessor()
     m_sensorFusion = std::make_unique<SensorFusionEKF>();
     m_spatialMapping = std::make_unique<SpatialMappingSystem>();
     m_bundleAdjustment = std::make_unique<BundleAdjustment>();
+#ifdef LENSENGINE_HAVE_NVISION
     m_featureDetector = std::make_unique<NVisionFeatureDetector>();
+#endif
     m_lightEstimator = std::make_unique<SHLightEstimator>();
     
     m_sensorFusion->initialize();

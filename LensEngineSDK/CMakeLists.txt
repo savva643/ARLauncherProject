@@ -18,8 +18,18 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-# nvision-cpp (feature detection - header-only)
-include_directories(${CMAKE_SOURCE_DIR}/../nvision-cpp/libnvision/include)
+# nvision-cpp (feature detection - header-only, опционально: лежит рядом с проектом, в репозиторий не входит)
+find_path(NVISION_INCLUDE_DIR nvision/feature.h
+    PATHS ${CMAKE_CURRENT_SOURCE_DIR}/../nvision-cpp/libnvision/include
+          ${CMAKE_SOURCE_DIR}/../nvision-cpp/libnvision/include
+    NO_DEFAULT_PATH)
+if(NVISION_INCLUDE_DIR)
+    include_directories(${NVISION_INCLUDE_DIR})
+    add_definitions(-DLENSENGINE_HAVE_NVISION)
+    message(STATUS "nvision-cpp found: ${NVISION_INCLUDE_DIR}")
+else()
+    message(STATUS "nvision-cpp not found — FAST features via OpenCV")
+endif()
 
 # Зависимости
 # GLM - математическая библиотека
@@ -164,6 +174,9 @@ set(LENSENGINE_SOURCES
     src/SceneUnderstanding.cpp
     src/TestSensorGenerator.cpp
     src/TestRunner.cpp
+    src/HeadTracker.cpp
+    src/VioTracker.cpp
+    src/TrackingSession.cpp
 )
 
 set(LENSENGINE_HEADERS
@@ -194,6 +207,9 @@ set(LENSENGINE_HEADERS
     include/SceneUnderstanding.h
     include/TestSensorGenerator.h
     include/TestRunner.h
+    include/HeadTracker.h
+    include/VioTracker.h
+    include/TrackingSession.h
 )
 
 # Создание библиотеки
@@ -239,6 +255,29 @@ if(Eigen3_FOUND)
     )
 endif()
 
+# OpenVINS (VIO 6DoF) — собирается скриптом third_party/build_openvins.sh. GPL-3.0.
+option(LENSENGINE_WITH_OPENVINS "Use OpenVINS for 6DoF visual-inertial tracking (if built)" ON)
+if(LENSENGINE_WITH_OPENVINS)
+    set(OPENVINS_PREFIX "${CMAKE_CURRENT_SOURCE_DIR}/../third_party/openvins/install" CACHE PATH "OpenVINS install prefix")
+    find_library(OPENVINS_LIB ov_msckf_lib PATHS ${OPENVINS_PREFIX}/lib NO_DEFAULT_PATH)
+    find_path(OPENVINS_INCLUDE core/VioManager.h PATHS ${OPENVINS_PREFIX}/include/open_vins NO_DEFAULT_PATH)
+    find_package(Boost QUIET COMPONENTS system filesystem thread date_time)
+    find_package(Ceres QUIET)
+    if(OPENVINS_LIB AND OPENVINS_INCLUDE AND OpenCV_FOUND AND Eigen3_FOUND AND Boost_FOUND)
+        target_include_directories(LensEngineSDK PRIVATE ${OPENVINS_INCLUDE} ${Boost_INCLUDE_DIRS})
+        if(Ceres_FOUND)
+            target_include_directories(LensEngineSDK PRIVATE ${CERES_INCLUDE_DIRS})
+        endif()
+        # PUBLIC: библиотека статическая, so-шку OpenVINS надо слинковать в исполняемый файл
+        target_link_libraries(LensEngineSDK PUBLIC ${OPENVINS_LIB} ${Boost_LIBRARIES} ${OpenCV_LIBS})
+        target_compile_definitions(LensEngineSDK PRIVATE LENSENGINE_WITH_OPENVINS ENABLE_ARUCO_TAGS=0 ROS_AVAILABLE=0)
+        set_property(TARGET LensEngineSDK APPEND PROPERTY INTERFACE_LINK_OPTIONS "-Wl,-rpath,${OPENVINS_PREFIX}/lib")
+        message(STATUS "OpenVINS VIO enabled: ${OPENVINS_LIB}")
+    else()
+        message(STATUS "OpenVINS not built — 3DoF head tracking only (run third_party/build_openvins.sh for 6DoF)")
+    endif()
+endif()
+
 # Link Bullet Physics
 if(Bullet_FOUND)
     target_link_libraries(LensEngineSDK
@@ -270,5 +309,9 @@ option(BUILD_TESTS "Build test applications" ON)
 if(BUILD_TESTS)
     add_executable(test_sensor_data tests/test_sensor_data.cpp)
     target_link_libraries(test_sensor_data LensEngineSDK)
+    add_executable(test_head_tracker tests/test_head_tracker.cpp)
+    target_link_libraries(test_head_tracker LensEngineSDK)
+    add_executable(test_tracking_session tests/test_tracking_session.cpp)
+    target_link_libraries(test_tracking_session LensEngineSDK)
 endif()
 

@@ -6,15 +6,16 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Опции сборки
-option(USE_VULKAN "Use Vulkan renderer" OFF)
-option(USE_OPENGL "Use OpenGL renderer" ON)
+# Vulkan — основной рендерер GlaskiOS. OpenGL — LEGACY (не развивается, оставлен только для старых машин).
+option(USE_VULKAN "Use Vulkan renderer (main)" ON)
+option(USE_OPENGL "LEGACY: OpenGL renderer" OFF)
 
 if(USE_VULKAN)
+    set(USE_OPENGL OFF)
     find_package(Vulkan QUIET)
     if(NOT Vulkan_FOUND)
-        message(WARNING "Vulkan not found, falling back to OpenGL")
-        set(USE_VULKAN OFF)
-        set(USE_OPENGL ON)
+        message(FATAL_ERROR "Vulkan not found: sudo apt install libvulkan-dev vulkan-tools glslang-tools "
+                            "(или -DUSE_VULKAN=OFF -DUSE_OPENGL=ON для LEGACY OpenGL)")
     endif()
 endif()
 
@@ -116,6 +117,11 @@ else()
     message(WARNING "LensEngineSDK not found, building without it")
     set(LENSENGINE_LIB "")
 endif()
+
+# SensorStream — приём потока iPhone (протокол v2), без Qt
+set(SENSORSTREAM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../SensorStream")
+set(SENSORSTREAM_BUILD_TOOLS ON CACHE BOOL "Build stream_simulator / stream_probe")
+add_subdirectory(${SENSORSTREAM_DIR} ${CMAKE_BINARY_DIR}/SensorStream)
 
 # Include директории (используем текущий source dir, чтобы корректно работать как под-проект)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -245,46 +251,9 @@ else()
     )
 endif()
 
-# SensorConnector (опционально, если нужна прямая интеграция)
-# Примечание: SensorConnector собирается через qmake и создает libSensorConnector.a
-# Для использования SensorConnector в ARLauncher нужно:
-# 1. Собрать SensorConnector через qmake
-# 2. Подключить Qt библиотеки
-# 3. Подключить libSensorConnector.a
-# 4. Добавить include директорию SensorConnector/include
-
-# Опция для подключения SensorConnector
-# ВНИМАНИЕ: SensorConnector должен быть собран с той же версией Qt, что и ARLauncher
-# Сейчас SensorConnector собран с Qt5, а ARLauncher использует Qt6
-# Для подключения нужно пересобрать SensorConnector с Qt6
-option(USE_SENSOR_CONNECTOR "Use SensorConnector library" ON)
-if(USE_SENSOR_CONNECTOR)
-    # Указываем путь к Qt6
-    set(Qt6_DIR "/home/savva/Qt/6.5.3/gcc_64/lib/cmake/Qt6" CACHE PATH "Qt6 directory")
-    find_package(Qt6 COMPONENTS Core Network Gui REQUIRED)
-    set(SENSOR_CONNECTOR_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../SensorConnector")
-    
-    if(EXISTS "${SENSOR_CONNECTOR_DIR}/lib/libSensorConnector.a")
-        target_link_libraries(ARLauncher PRIVATE 
-            ${SENSOR_CONNECTOR_DIR}/lib/libSensorConnector.a
-            Qt6::Core
-            Qt6::Network
-            Qt6::Gui
-            turbojpeg
-            jpeg
-            avcodec
-            avformat
-            avutil
-            swscale
-            swresample
-        )
-        target_include_directories(ARLauncher PRIVATE ${SENSOR_CONNECTOR_DIR}/include)
-        target_compile_definitions(ARLauncher PRIVATE USE_SENSOR_CONNECTOR QT_NO_DEBUG)
-        message(STATUS "SensorConnector library linked")
-    else()
-        message(WARNING "SensorConnector library not found. Build it first with qmake")
-    endif()
-endif()
+# Поток с iPhone принимает SensorStream (без Qt, в своих потоках).
+# Старый Qt SensorConnector (../SensorConnector) — LEGACY, лаунчером больше не используется.
+target_link_libraries(ARLauncher PRIVATE SensorStream)
 
 # Копируем шейдеры в директорию сборки
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/shaders DESTINATION ${CMAKE_BINARY_DIR})

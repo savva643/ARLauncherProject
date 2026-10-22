@@ -2,6 +2,15 @@
 #include <algorithm>
 #include <iostream>
 
+#ifndef LENSENGINE_HAVE_NVISION
+// nvision-cpp не найден при сборке: заглушка, ARDataProcessor использует OpenCV
+namespace LensEngine {
+NVisionFeatureDetector::NVisionFeatureDetector() = default;
+NVisionFeatureDetector::~NVisionFeatureDetector() = default;
+std::vector<FeaturePoint> NVisionFeatureDetector::detectFeatures(const RGBImage&, int) { return {}; }
+std::vector<FeaturePoint> NVisionFeatureDetector::detectORBFeatures(const RGBImage&, int) { return {}; }
+} // namespace LensEngine
+#else
 namespace LensEngine {
 
 NVisionFeatureDetector::NVisionFeatureDetector() {
@@ -109,3 +118,5 @@ std::vector<FeaturePoint> NVisionFeatureDetector::detectORBFeatures(const RGBIma
 }
 
 } // namespace LensEngine
+
+#endif // LENSENGINE_HAVE_NVISION
